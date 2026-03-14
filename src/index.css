@@ -1,0 +1,103 @@
+:root {
+  color-scheme: dark;
+  font-family: "Bahnschrift", "Segoe UI Variable Text", "Trebuchet MS", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  --bg: #071018;
+  --bg-2: #0d1724;
+  --panel: rgba(12, 21, 34, 0.9);
+  --text-strong: #f6f8fb;
+  --text-muted: #92a6bb;
+  --accent: #ffb15f;
+  --accent-2: #6fd6ff;
+  --field-bg: rgba(255, 255, 255, 0.03);
+  --field-bg-focus: rgba(255, 255, 255, 0.05);
+  --field-surface: #101826;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root[data-theme="midnight"] {
+  --bg: #071018;
+  --bg-2: #0d1724;
+  --panel: rgba(12, 21, 34, 0.9);
+  --text-strong: #f6f8fb;
+  --text-muted: #92a6bb;
+  --accent: #ffb15f;
+  --accent-2: #6fd6ff;
+  --field-bg: rgba(255, 255, 255, 0.03);
+  --field-bg-focus: rgba(255, 255, 255, 0.05);
+  --field-surface: #101826;
+}
+
+:root[data-theme="ember"] {
+  --bg: #1a0f0b;
+  --bg-2: #281711;
+  --panel: rgba(34, 21, 17, 0.9);
+  --text-strong: #fff8f4;
+  --text-muted: #d1b6aa;
+  --accent: #ff9f68;
+  --accent-2: #ffdf8f;
+  --field-bg: rgba(255, 245, 240, 0.045);
+  --field-bg-focus: rgba(255, 245, 240, 0.08);
+  --field-surface: #241713;
+}
+
+:root[data-theme="aurora"] {
+  --bg: #091319;
+  --bg-2: #11202a;
+  --panel: rgba(12, 26, 33, 0.9);
+  --text-strong: #f3fbff;
+  --text-muted: #96bcc8;
+  --accent: #6cf7c8;
+  --accent-2: #74b8ff;
+  --field-bg: rgba(240, 255, 255, 0.035);
+  --field-bg-focus: rgba(240, 255, 255, 0.07);
+  --field-surface: #10202a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+body {
+  background:
+    radial-gradient(circle at top left, rgba(255, 177, 95, 0.12), transparent 30%),
+    radial-gradient(circle at top right, rgba(111, 214, 255, 0.12), transparent 26%),
+    linear-gradient(180deg, var(--bg-2) 0%, var(--bg) 52%, #050a12 100%);
+}
+
+:root[data-theme="ember"] body {
+  background:
+    radial-gradient(circle at top left, rgba(255, 148, 99, 0.2), transparent 30%),
+    radial-gradient(circle at top right, rgba(255, 220, 143, 0.11), transparent 24%),
+    linear-gradient(180deg, #251511 0%, var(--bg) 52%, #0d0605 100%);
+}
+
+:root[data-theme="aurora"] body {
+  background:
+    radial-gradient(circle at top left, rgba(108, 247, 200, 0.14), transparent 28%),
+    radial-gradient(circle at top right, rgba(116, 184, 255, 0.15), transparent 24%),
+    linear-gradient(180deg, #0d1a23 0%, var(--bg) 52%, #040c11 100%);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
