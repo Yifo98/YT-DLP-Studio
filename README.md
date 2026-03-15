@@ -2,28 +2,35 @@
 
 ![YT-DLP Studio icon](public/brand-icon.svg)
 
-中文 | [English](#english)
-
 YT-DLP Studio 是一个给 `yt-dlp` 准备的桌面控制台，把链接下载、`cookies.txt` 选择和本地媒体后处理整理到同一个界面里。
+
+English summary is included below. GitHub README 本身不支持真正的界面式语言切换，所以这里改成顺排双语说明，不再靠跳转锚点假装切换。
 
 ## 下载
 
 - [前往 GitHub Releases 下载](https://github.com/Yifo98/YT-DLP-Studio/releases/latest)
-- Windows：优先下载 `YT-DLP-Studio-win-x64.zip`
-- macOS：当前已支持通过系统环境运行，发布包会继续完善
+- Windows：优先下载 `YT-DLP Studio-0.1.0-win.zip`，也可直接使用便携版 `YT-DLP Studio 0.1.0.exe`
+- macOS：优先下载 `YT-DLP Studio-0.1.0-arm64-mac.zip`
 
-默认目标是开盖即用。
+当前标准发布包目标就是“解压即用”。
 
-只有当某个发布包明确标注为 `Lite`、`tools not bundled` 或 `UI-only` 时，才需要额外准备 `yt-dlp`、`ffmpeg`、`ffprobe`。macOS 下可以优先用 Homebrew，或者使用 Conda 创建环境后再运行。
+当前 `macOS` 与 `Windows` 分享包都已经内置：
+
+- `yt-dlp`
+- `ffmpeg`
+- `ffprobe`
+- `deno`
+
+只有当某个发布包明确标注为 `Lite`、`tools not bundled` 或 `UI-only` 时，才需要额外准备环境。
 
 ## macOS 使用说明
 
-macOS 版本现在支持两种方式找工具：
+macOS 版本现在优先使用应用包内置工具，同时仍保留系统环境兜底：
 
 1. 应用包内自带 `tools/`
 2. 系统环境里已安装的 `yt-dlp`、`ffmpeg`、`ffprobe`、`deno`
 
-如果你准备先在本机直接运行开发版或 UI-only 版本，推荐先安装：
+如果你运行的是开发版或 UI-only 版本，推荐先安装：
 
 ```bash
 brew install yt-dlp ffmpeg deno
@@ -31,11 +38,30 @@ brew install yt-dlp ffmpeg deno
 
 如果你更习惯 Conda，也可以把这些工具放进同一个环境里，应用会自动尝试从该环境的 `bin/` 目录读取。
 
+## Windows 使用说明
+
+Windows 现在同时提供两种成品：
+
+- `YT-DLP Studio-0.1.0-win.zip`
+- `YT-DLP Studio 0.1.0.exe`
+
+两者都已经内置运行所需工具，不需要额外安装 Conda、ffmpeg、yt-dlp 或 Deno。
+
 ## 功能概览
 
-- 桌面控制台：批量链接下载、格式选择、实时进度
-- 媒体工具台：音轨分离、字幕导出、流信息查看
+- 桌面控制台：批量链接下载、格式选择、4K 画质上限、实时进度
+- 媒体工具台：音轨分离、字幕导出、流信息查看、字幕整理
 - Cookies 管理：导入本地 `cookies.txt` 处理登录态或会员内容
+
+## 1.0.1 亮点
+
+- 新增真正可分享的 `macOS arm64` 解压即用包
+- 新增 `Windows x64` zip 和便携 exe
+- 打包时自动排除 cookies、用户数据和字幕整理模型配置
+- 媒体工具台新增 OpenAI-compatible 字幕整理能力
+- 支持模型拉取、连接测试、批量整理、自定义服务保存
+- 下载台补齐环境刷新、链接清空、多行粘贴去重
+- 主项目根目录只保留一个启动器，日常启动更直接
 
 ## Cookies 推荐
 
@@ -63,6 +89,9 @@ brew install yt-dlp ffmpeg deno
 更详细的 Win / Mac 发布文案、下载资产命名和环境兜底说明，请看：
 
 - [发布说明 / Release Guide](docs/RELEASES.md)
+- [1.0.1 发布文案](docs/release-1.0.1.md)
+
+---
 
 ## English
 
@@ -71,16 +100,23 @@ YT-DLP Studio is a desktop control room for `yt-dlp`, combining downloads, `cook
 ## Download
 
 - [Download from GitHub Releases](https://github.com/Yifo98/YT-DLP-Studio/releases/latest)
-- Windows: prefer `YT-DLP-Studio-win-x64.zip`
-- macOS can already run against tools available in the system environment, and bundled assets will keep improving
+- Windows: prefer `YT-DLP Studio-0.1.0-win.zip`, or use the portable `YT-DLP Studio 0.1.0.exe`
+- macOS: prefer `YT-DLP Studio-0.1.0-arm64-mac.zip`
 
-The default goal is plug-and-play.
+The standard shared builds are now intended to be plug-and-play.
 
-Only install `yt-dlp`, `ffmpeg`, and `ffprobe` manually when a release asset is explicitly labeled as `Lite`, `tools not bundled`, or `UI-only`. On macOS, Homebrew is the quickest path. Conda remains a good fallback.
+Both current `macOS` and `Windows` shared packages already bundle:
+
+- `yt-dlp`
+- `ffmpeg`
+- `ffprobe`
+- `deno`
+
+Only install tools manually when an asset is explicitly labeled as `Lite`, `tools not bundled`, or `UI-only`.
 
 ## macOS Notes
 
-The app now looks for tools in either:
+The macOS build now prefers bundled tools while still keeping a system fallback:
 
 1. A bundled `tools/` directory
 2. Your system environment, including Homebrew and Conda locations
@@ -91,11 +127,29 @@ For local development or a UI-only build on macOS, the recommended setup is:
 brew install yt-dlp ffmpeg deno
 ```
 
+## Windows Notes
+
+Windows now ships in two forms:
+
+- `YT-DLP Studio-0.1.0-win.zip`
+- `YT-DLP Studio 0.1.0.exe`
+
+Both already include the required runtime tools, so users do not need to install Conda, ffmpeg, yt-dlp, or Deno separately.
+
 ## Highlights
 
-- Desktop control room for link-based downloads and job tracking
-- Media tools window for audio extraction, subtitle export, and stream inspection
+- Desktop control room for link-based downloads, job tracking, and quality caps up to 4K
+- Media tools window for audio extraction, subtitle export, stream inspection, and subtitle cleanup
 - Local `cookies.txt` support for signed-in or member-only content
+
+## 1.0.1 Highlights
+
+- Added a shareable macOS arm64 plug-and-play package
+- Added Windows x64 zip and portable exe builds
+- Packaging now excludes cookies, user data, and local model configs
+- Added OpenAI-compatible subtitle cleanup in the media tools window
+- Added model fetching, connection testing, batch cleanup, and custom provider presets
+- Improved runtime refresh, link clearing, multiline paste dedupe, and launcher cleanup
 
 ## Cookies Recommendation
 
@@ -121,3 +175,4 @@ The app should then start normally.
 For release wording, asset naming, and dependency fallback notes, see:
 
 - [Release Guide](docs/RELEASES.md)
+- [1.0.1 Release Copy](docs/release-1.0.1.md)
