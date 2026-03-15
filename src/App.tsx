@@ -177,7 +177,7 @@ function getText(language: Language) {
         startHint: '先粘贴至少一个链接吧。',
         queuePrepared: '已准备好 {count} 个下载链接。',
         currentCommandPlaceholder: '任务启动后，这里会显示最新命令。',
-        openFile: '打开文件',
+        openFile: '打开所在文件夹',
         copiedFromHistory: '已从历史记录回填。',
       }
     : {
@@ -271,7 +271,7 @@ function getText(language: Language) {
         startHint: 'Paste at least one URL to begin.',
         queuePrepared: '{count} URL(s) queued and ready.',
         currentCommandPlaceholder: 'The latest command will appear here after a job starts.',
-        openFile: 'Open file',
+        openFile: 'Show in folder',
         copiedFromHistory: 'Refilled from history.',
       }
 }
@@ -504,7 +504,9 @@ function App() {
       setJobs((current) => {
         const previous = current[nextJob.jobId]
         const next = { ...current, [nextJob.jobId]: nextJob }
-        if (!previous) setJobOrder((order) => [...order, nextJob.jobId])
+        if (!previous) {
+          setJobOrder((order) => (order.includes(nextJob.jobId) ? order : [...order, nextJob.jobId]))
+        }
         if (['success', 'error', 'cancelled'].includes(nextJob.status) && (!previous || previous.status !== nextJob.status)) {
           setHistory((currentHistory) => {
             const queueSnapshot = activeQueueSnapshotRef.current
@@ -945,7 +947,7 @@ function App() {
                 <p className="job-card__url">{job.url}</p>
                 <div className="progress-bar progress-bar--small"><div className="progress-bar__fill" style={{ width: `${Math.max(job.percent ?? 4, 4)}%` }} /></div>
                 <div className="progress-meta progress-meta--wrap"><span>{job.percent !== null ? `${job.percent.toFixed(1)}%` : text.waiting}</span><span>{text.downloaded}: {job.downloaded}</span><span>{text.total}: {job.total}</span><span>{text.eta}: {job.eta}</span><span>{job.speed}</span></div>
-                {job.outputPath ? <button className="ghost-button ghost-button--full" type="button" onClick={() => void window.ytDlpApi.openPath(job.outputPath ?? '')}>{text.openFile}</button> : null}
+                {job.outputPath ? <button className="ghost-button ghost-button--full" type="button" onClick={() => void window.ytDlpApi.showItemInFolder(job.outputPath ?? '')}>{text.openFile}</button> : null}
               </div>
             ))}
           </div>

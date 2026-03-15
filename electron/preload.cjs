@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('ytDlpApi', {
   testSubtitleCleanupConnection: (config) => ipcRenderer.invoke('subtitle-cleanup:test-connection', config),
   runSubtitleCleanup: (request) => ipcRenderer.invoke('subtitle-cleanup:run', request),
   openPath: (targetPath) => ipcRenderer.invoke('shell:openPath', targetPath),
+  showItemInFolder: (targetPath) => ipcRenderer.invoke('shell:showItemInFolder', targetPath),
   openExternal: (targetUrl) => ipcRenderer.invoke('shell:openExternal', targetUrl),
   onDownloadUpdate: (listener) => {
     const wrapped = (_event, payload) => listener(payload)

@@ -180,6 +180,7 @@ interface Window {
       skipExistingOutputs: boolean
     }) => Promise<string[]>
     openPath: (targetPath: string) => Promise<void>
+    showItemInFolder: (targetPath: string) => Promise<void>
     openExternal: (targetUrl: string) => Promise<void>
     onDownloadUpdate: (listener: (payload: DownloadUpdate) => void) => Unsubscribe
     onMediaToolsUpdate: (listener: (payload: MediaToolsUpdate) => void) => Unsubscribe

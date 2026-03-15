@@ -1059,6 +1059,7 @@ function buildArgs(request: DownloadRequest, url: string) {
   const extraArgs = tokenizeExtraArgs(request.extraArgs.trim())
   const skipDownload = extraArgs.includes('--skip-download')
   const args = [
+    '--no-update',
     '--newline',
     '--progress-template',
     'download:PROGRESS|%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._speed_str)s|%(progress._eta_str)s',
@@ -1756,6 +1757,13 @@ ipcMain.handle('shell:openPath', async (_event, targetPath: string) => {
     return
   }
   await shell.openPath(targetPath)
+})
+
+ipcMain.handle('shell:showItemInFolder', async (_event, targetPath: string) => {
+  if (!targetPath) {
+    return
+  }
+  shell.showItemInFolder(targetPath)
 })
 
 ipcMain.handle('shell:openExternal', async (_event, targetUrl: string) => {

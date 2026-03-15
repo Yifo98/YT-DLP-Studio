@@ -1,7 +1,7 @@
 {
   "name": "yt-dlp-studio",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.1",
   "type": "module",
   "main": "dist-electron/main.js",
   "description": "A polished Electron front-end for yt-dlp using the shared conda environment.",

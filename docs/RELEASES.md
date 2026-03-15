@@ -9,7 +9,7 @@
 
 ## 当前推荐资产
 
-- `YT-DLP-Studio-win-x64.zip`
+- `YT-DLP Studio-1.0.1-win.zip`
   说明：Windows 推荐下载，解压后运行 `YT-DLP Studio.exe`
 - macOS 资产
   说明：可发布 `dmg` / `zip`，未内置工具时建议同时注明依赖系统环境
@@ -64,11 +64,10 @@ Windows 首次运行时，可能会看到系统安全提示。
 
 ## 资产命名建议
 
-- `YT-DLP-Studio-win-x64.zip`
-- `YT-DLP-Studio-win-portable.exe`
-- `YT-DLP-Studio-macos.zip`
-- `YT-DLP-Studio-macos.dmg`
-- `YT-DLP-Studio-macos.pkg`
+- `YT-DLP Studio-1.0.1-win.zip`
+- `YT-DLP Studio 1.0.1.exe`
+- `YT-DLP Studio-1.0.1-arm64-mac.zip`
+- `YT-DLP Studio-1.0.1.dmg`
 
 ## English
 
