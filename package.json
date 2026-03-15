@@ -52,8 +52,16 @@
       "dist/**",
       "dist-electron/**",
       "electron/preload.cjs",
-      "tools/**",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "tools",
+        "to": "tools",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "win": {
       "signAndEditExecutable": false,

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, dirname, relative, parse } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
@@ -103,9 +103,6 @@ type JobContext = {
 }
 
 const envRoot = 'C:\\Users\\84027\\.conda\\envs\\yt-dlp'
-const bundledToolsDir = join(process.resourcesPath, 'tools')
-const fallbackToolsDir = join(envRoot, 'Scripts')
-const cookiesDir = 'I:\\yt-dlp\\cookies'
 const denoCandidates = [
   'C:\\Users\\84027\\AppData\\Local\\Microsoft\\WinGet\\Packages\\DenoLand.Deno_Microsoft.Winget.Source_8wekyb3d8bbwe\\deno.exe',
   'C:\\Program Files\\Deno\\bin\\deno.exe',
@@ -133,9 +130,53 @@ let batchCancelled = false
 let activeMediaProcess: ChildProcessWithoutNullStreams | null = null
 let mediaCancelled = false
 
+function ensureDirectory(dirPath: string) {
+  if (!existsSync(dirPath)) {
+    mkdirSync(dirPath, { recursive: true })
+  }
+  return dirPath
+}
+
+function getDevRootDir() {
+  return join(__dirname, '..')
+}
+
+function getBundledToolsDir() {
+  return join(process.resourcesPath, 'tools')
+}
+
+function getPortableRootDir() {
+  return dirname(process.execPath)
+}
+
+function getFallbackToolsDir() {
+  return join(envRoot, 'Scripts')
+}
+
 function getToolsDir() {
-  const bundledYtDlpPath = join(bundledToolsDir, 'yt-dlp.exe')
-  return existsSync(bundledYtDlpPath) ? bundledToolsDir : fallbackToolsDir
+  const candidates = [
+    getBundledToolsDir(),
+    join(getPortableRootDir(), 'tools'),
+    join(getDevRootDir(), 'tools'),
+    getFallbackToolsDir(),
+  ]
+
+  for (const candidate of candidates) {
+    const bundledYtDlpPath = join(candidate, 'yt-dlp.exe')
+    if (existsSync(bundledYtDlpPath)) {
+      return candidate
+    }
+  }
+
+  return getFallbackToolsDir()
+}
+
+function getCookiesDir() {
+  const targetDir = app.isPackaged
+    ? join(app.getPath('userData'), 'cookies')
+    : join(getDevRootDir(), 'cookies')
+
+  return ensureDirectory(targetDir)
 }
 
 function resolveDialogStartDirectory(inputPath?: string) {
@@ -211,8 +252,8 @@ function getSelfCheckItems(): SelfCheckItem[] {
     {
       key: 'cookies',
       label: 'Cookies dir',
-      ok: existsSync(cookiesDir),
-      detail: cookiesDir,
+      ok: existsSync(getCookiesDir()),
+      detail: getCookiesDir(),
     },
   ]
 }
@@ -930,15 +971,15 @@ ipcMain.handle('paths:get', () => ({
   ffprobePath: getFfprobePath(),
   denoPath: getDenoPath(),
   defaultDownloadDir: resolveDefaultDownloads(),
-  envName: getToolsDir() === bundledToolsDir ? 'portable-tools' : 'yt-dlp',
-  cookiesDir,
+  envName: getToolsDir() === getFallbackToolsDir() ? 'yt-dlp' : 'portable-tools',
+  cookiesDir: getCookiesDir(),
 }))
 
-ipcMain.handle('cookies:list', () => listCookieFilesRecursive(cookiesDir))
+ipcMain.handle('cookies:list', () => listCookieFilesRecursive(getCookiesDir()))
 
 ipcMain.handle('self-check:get', () => ({
   items: getSelfCheckItems(),
-  toolsSource: getToolsDir() === bundledToolsDir ? 'bundled' : 'conda',
+  toolsSource: getToolsDir() === getFallbackToolsDir() ? 'conda' : 'bundled',
 }))
 
 ipcMain.handle('window:openMediaTools', () => {
