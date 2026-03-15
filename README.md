@@ -4,80 +4,92 @@
 
 中文 | [English](#english)
 
-YT-DLP Studio 是一个面向日常使用的桌面工具，把 `yt-dlp`、下载管理、cookies 选择和本地媒体后处理整理到一个更容易上手的界面里。
+YT-DLP Studio 是一个给 `yt-dlp` 准备的桌面控制台，把链接下载、`cookies.txt` 选择和本地媒体后处理整理到同一个界面里。
 
-## 快速下载
+## 下载
 
 - [前往 GitHub Releases 下载](https://github.com/Yifo98/YT-DLP-Studio/releases/latest)
-- Windows 用户：优先下载 Win 压缩包或便携包
-- macOS 用户：后续版本会持续完善 Mac 压缩包、`.dmg` 或 `.pkg` 安装包支持
+- Windows：优先下载 `YT-DLP-Studio-win-x64.zip`
+- macOS：后续版本会继续完善 Mac 压缩包和安装包支持
 
-开盖即用为默认目标。
+默认目标是开盖即用。
 
-只有当某个发布包明确写着“未内置工具”或“Lite”时，才需要额外准备 `ffmpeg`、`ffprobe`、`yt-dlp`，这种情况建议用 Conda 创建环境后再运行。
+只有当某个发布包明确标注为 `Lite`、`tools not bundled` 或 `UI-only` 时，才需要额外准备 `yt-dlp`、`ffmpeg`、`ffprobe`，这时建议使用 Conda 创建环境后再运行。
 
-## 适合谁
+## 功能概览
 
-- 想直接下载公开视频、课程视频、音频内容的人
-- 需要导入 cookies 处理登录态或会员内容的人
-- 想把下载和本地后处理分开管理的人
+- 桌面控制台：批量链接下载、格式选择、实时进度
+- 媒体工具台：音轨分离、字幕导出、流信息查看
+- Cookies 管理：导入本地 `cookies.txt` 处理登录态或会员内容
 
-## 主要功能
+## Cookies 推荐
 
-- 桌面控制台：链接下载、格式选择、任务进度
-- 媒体工具台：音轨分离、字幕轨导出、流信息查看
-- Cookies 选择：支持导入本地 `cookies.txt` 文件
-
-## Cookies 建议
-
-如果目标网站需要登录态或会员权限，推荐先在浏览器里导出 `cookies.txt` 再放进项目的 `cookies/` 目录。
+如果目标站点需要登录态或会员权限，推荐先在浏览器导出 `cookies.txt` 再放进本地 `cookies/` 目录。
 
 推荐浏览器扩展：
 
 - [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
 
+## Windows 首次运行提示
+
+当前 Windows 发布包还没有做代码签名，第一次在其他电脑上运行时，可能会看到 SmartScreen 的“Windows 已保护你的电脑”提示。
+
+这时候点击：
+
+1. `更多信息`
+2. `仍要运行`
+
+就可以继续启动。
+
+后续会继续完善签名和发布体验。
+
 ## 发布说明
 
-更详细的 Win / Mac 下载说明、包类型说明和依赖兜底方案，请看：
+更详细的 Win / Mac 发布文案、下载资产命名和环境兜底说明，请看：
 
-- [发布说明 / Release Notes Guide](docs/RELEASES.md)
+- [发布说明 / Release Guide](docs/RELEASES.md)
 
 ## English
 
-YT-DLP Studio is a desktop control room for `yt-dlp` that makes downloads, cookie selection, and local media post-processing easier to use from one interface.
+YT-DLP Studio is a desktop control room for `yt-dlp`, combining downloads, `cookies.txt` selection, and local media post-processing in one interface.
 
 ## Download
 
 - [Download from GitHub Releases](https://github.com/Yifo98/YT-DLP-Studio/releases/latest)
-- Windows users: prefer the Windows zip or portable package
-- macOS support will be improved in upcoming releases, including macOS zip, `.dmg`, and `.pkg` packaging
+- Windows: prefer `YT-DLP-Studio-win-x64.zip`
+- macOS support will be improved in upcoming releases
 
 The default goal is plug-and-play.
 
-Only use Conda or install `ffmpeg` / `ffprobe` / `yt-dlp` manually if a release asset is explicitly marked as not bundling those tools, or if it is labeled as a lightweight build.
-
-## Best For
-
-- People who want a cleaner desktop UI for video or audio downloads
-- Users who need cookies for member-only or signed-in content
-- Workflows that separate downloading from local media processing
+Only install `yt-dlp`, `ffmpeg`, and `ffprobe` manually when a release asset is explicitly labeled as `Lite`, `tools not bundled`, or `UI-only`. In that case, using Conda is the recommended fallback.
 
 ## Highlights
 
 - Desktop control room for link-based downloads and job tracking
 - Media tools window for audio extraction, subtitle export, and stream inspection
-- Local `cookies.txt` selection for protected content
+- Local `cookies.txt` support for signed-in or member-only content
 
 ## Cookies Recommendation
 
-For sites that require a signed-in or member session, export `cookies.txt` from your browser first and place it into the local `cookies/` directory.
+If a target site requires a signed-in or member session, export `cookies.txt` from your browser and place it into the local `cookies/` directory first.
 
 Recommended browser extension:
 
 - [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
 
+## Windows First-Run Note
+
+The current Windows builds are not code-signed yet, so SmartScreen may show a warning the first time the app is launched on another PC.
+
+If that happens, click:
+
+1. `More info`
+2. `Run anyway`
+
+The app should then start normally.
+
 ## Release Guide
 
-For package types, release wording, and dependency fallback notes, see:
+For release wording, asset naming, and dependency fallback notes, see:
 
-- [Release Notes Guide](docs/RELEASES.md)
+- [Release Guide](docs/RELEASES.md)

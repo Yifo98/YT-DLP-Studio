@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist-electron/main.js",
   "description": "A polished Electron front-end for yt-dlp using the shared conda environment.",
-  "author": "Codex",
+  "author": "Dyifo",
   "scripts": {
     "dev:web": "vite",
     "dev:electron": "node scripts/dev-electron.mjs",

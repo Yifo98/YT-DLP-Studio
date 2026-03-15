@@ -1,6 +1,7 @@
 param(
     [string]$ProjectRoot = "I:\yt-dlp",
-    [string]$EnvScriptsDir = "C:\Users\84027\.conda\envs\yt-dlp\Scripts"
+    [string]$EnvScriptsDir = "C:\Users\84027\.conda\envs\yt-dlp\Scripts",
+    [string]$YtDlpStandaloneUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
 )
 
 Set-StrictMode -Version Latest
@@ -12,7 +13,6 @@ $shareRoot = Join-Path $releaseDir "share"
 $shareZip = Join-Path $releaseDir "YT-DLP-Studio-share.zip"
 
 $requiredFiles = @(
-    "yt-dlp.exe",
     "ffmpeg.exe",
     "ffprobe.exe"
 )
@@ -27,6 +27,10 @@ foreach ($fileName in $requiredFiles) {
 
     Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $toolsDir $fileName) -Force
 }
+
+$ytDlpDestination = Join-Path $toolsDir "yt-dlp.exe"
+Write-Host "Downloading standalone yt-dlp.exe from official release..."
+Invoke-WebRequest -Uri $YtDlpStandaloneUrl -OutFile $ytDlpDestination
 
 Push-Location $ProjectRoot
 try {

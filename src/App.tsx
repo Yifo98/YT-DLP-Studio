@@ -390,6 +390,12 @@ function App() {
       ? '会员或登录态内容建议先用这个浏览器扩展导出 cookies.txt，再放进本项目的 cookies 目录。'
       : 'For member-only or signed-in content, export a cookies.txt file with this browser extension first, then place it in the project cookies folder.'
   const cookiesPluginButton = language === 'zh' ? '打开插件页' : 'Open extension page'
+  const denoInstallUrl = 'https://deno.com/'
+  const denoInstallButton = language === 'zh' ? '安装 Deno' : 'Install Deno'
+  const denoInstallHint =
+    language === 'zh'
+      ? '安装后可提升 YouTube 等站点的解析稳定性。'
+      : 'Install it to improve extraction stability for YouTube and similar sites.'
   const presetCopy = EXTRA_PRESETS[language]
 
   useEffect(() => {
@@ -646,7 +652,19 @@ function App() {
         <div className="hero__status-grid">
           <div className="status-card"><span className="status-card__label">{text.status}</span><strong>{statusLabel(effectiveStatus, text)}</strong><p>{effectiveMessage}</p></div>
           <div className="status-card"><span className="status-card__label">YT-DLP</span><strong>{paths?.envName ?? text.loading}</strong><p>{paths?.ytDlpPath ?? text.loadingPath}</p></div>
-          <div className="status-card"><span className="status-card__label">{text.compatibility}</span><strong>{paths?.denoPath ? text.readyForYoutube : text.basicMode}</strong><p>{denoHint}</p></div>
+          <div className="status-card">
+            <span className="status-card__label">{text.compatibility}</span>
+            <strong>{paths?.denoPath ? text.readyForYoutube : text.basicMode}</strong>
+            <p>{denoHint}</p>
+            {!paths?.denoPath ? (
+              <div className="status-card__actions">
+                <button className="ghost-button ghost-button--small" type="button" onClick={() => void window.ytDlpApi.openExternal(denoInstallUrl)}>
+                  {denoInstallButton}
+                </button>
+                <small>{denoInstallHint}</small>
+              </div>
+            ) : null}
+          </div>
         </div>
         <div className="command-box hero-checks">
           <span>{language === 'zh' ? '启动自检' : 'Startup self-check'}</span>
