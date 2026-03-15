@@ -25,6 +25,11 @@ type HistoryItem = {
   finishedAt: string
 }
 
+type ActiveQueueSnapshot = {
+  mode: DownloadMode
+  outputDir: string
+}
+
 type StoredPreferences = {
   outputDir: string
   mode: DownloadMode
@@ -86,6 +91,11 @@ function getText(language: Language) {
         heroCopy: '收掉没必要的选择题，保留真正常用的下载动作。',
         status: '状态',
         compatibility: '兼容性',
+        refreshTools: '刷新环境',
+        refreshingTools: '刷新中...',
+        refreshedWithDeno: '环境已刷新，已检测到 Deno。',
+        refreshedWithoutDeno: '环境已刷新，暂时还没检测到 Deno。',
+        refreshFailed: '环境刷新失败。',
         loading: '加载中...',
         loadingPath: '正在读取 yt-dlp 路径...',
         basicMode: '基础模式',
@@ -96,6 +106,9 @@ function getText(language: Language) {
         downloadPanelHint: '一行一个链接，默认顺序下载。',
         urls: '链接列表',
         urlsPlaceholder: '每行一个链接',
+        urlsHint: '支持一次粘贴多行链接，系统会自动拆成多条。',
+        addLink: '添加链接',
+        clearLinks: '清空链接',
         outputFolder: '输出目录',
         browse: '选择目录',
         openCookiesDir: '打开 cookies 目录',
@@ -104,8 +117,9 @@ function getText(language: Language) {
         audio: '音频',
         sequentialHint: '现在默认按顺序下载，不再额外让你选队列模式。',
         videoPreset: '视频预设',
-        videoPresetHint: '控制最高画质上限。',
+        videoPresetHint: '控制最高画质上限。自动最佳会尽量拿站点允许的最高画质；B 站 4K 取决于源片、登录态和权限。',
         best: '自动最佳',
+        p2160: '最高 4K',
         p1080: '最高 1080p',
         p720: '最高 720p',
         p480: '最高 480p',
@@ -161,6 +175,7 @@ function getText(language: Language) {
         statusCancelled: '已取消',
         bootstrapError: 'window.ytDlpApi 不可用，preload 没有挂上。',
         startHint: '先粘贴至少一个链接吧。',
+        queuePrepared: '已准备好 {count} 个下载链接。',
         currentCommandPlaceholder: '任务启动后，这里会显示最新命令。',
         openFile: '打开文件',
         copiedFromHistory: '已从历史记录回填。',
@@ -170,6 +185,11 @@ function getText(language: Language) {
         heroCopy: 'Trimmed back to the controls people actually use.',
         status: 'Status',
         compatibility: 'Compatibility',
+        refreshTools: 'Refresh runtime',
+        refreshingTools: 'Refreshing...',
+        refreshedWithDeno: 'Runtime refreshed. Deno is now available.',
+        refreshedWithoutDeno: 'Runtime refreshed. Deno is still missing.',
+        refreshFailed: 'Failed to refresh runtime.',
         loading: 'Loading...',
         loadingPath: 'Reading yt-dlp path...',
         basicMode: 'Basic mode',
@@ -180,6 +200,9 @@ function getText(language: Language) {
         downloadPanelHint: 'One URL per line. Downloads run sequentially by default.',
         urls: 'URL list',
         urlsPlaceholder: 'One URL per line',
+        urlsHint: 'Paste multiple lines at once and they will be split into separate URLs.',
+        addLink: 'Add link',
+        clearLinks: 'Clear links',
         outputFolder: 'Output folder',
         browse: 'Browse',
         openCookiesDir: 'Open cookies folder',
@@ -188,8 +211,9 @@ function getText(language: Language) {
         audio: 'Audio',
         sequentialHint: 'Queue mode has been removed from the UI. Downloads are sequential by default.',
         videoPreset: 'Video preset',
-        videoPresetHint: 'Sets the maximum quality ceiling.',
+        videoPresetHint: 'Sets the maximum quality ceiling. Best available will try to grab the highest quality the site allows; Bilibili 4K depends on source availability, login state, and account permissions.',
         best: 'Best available',
+        p2160: 'Up to 4K',
         p1080: 'Up to 1080p',
         p720: 'Up to 720p',
         p480: 'Up to 480p',
@@ -245,6 +269,7 @@ function getText(language: Language) {
         statusCancelled: 'Cancelled',
         bootstrapError: 'window.ytDlpApi is unavailable. Preload did not attach.',
         startHint: 'Paste at least one URL to begin.',
+        queuePrepared: '{count} URL(s) queued and ready.',
         currentCommandPlaceholder: 'The latest command will appear here after a job starts.',
         openFile: 'Open file',
         copiedFromHistory: 'Refilled from history.',
@@ -351,8 +376,28 @@ function mergeExtraArgs(presets: ExtraPresetId[]) {
   return presetArgs.join(' ').trim()
 }
 
+function sortCookieFiles(items: CookieFileInfo[], language: Language) {
+  return [...items].sort((left, right) => {
+    const a = classifyCookieFile(left, language)
+    const b = classifyCookieFile(right, language)
+    return a.rank !== b.rank ? a.rank - b.rank : left.label.localeCompare(right.label)
+  })
+}
+
+function upsertHistoryItem(currentHistory: HistoryItem[], nextItem: HistoryItem) {
+  const nextUrlsKey = nextItem.urls.join('\n')
+  const filtered = currentHistory.filter((item) => {
+    const currentUrlsKey = item.urls.join('\n')
+    return !(currentUrlsKey === nextUrlsKey && item.mode === nextItem.mode && item.outputDir === nextItem.outputDir)
+  })
+  return [nextItem, ...filtered].slice(0, 20)
+}
+
 function App() {
   const initialPreferences = useMemo(() => readPreferences(), [])
+  const initialOutputDirRef = useRef(initialPreferences.outputDir)
+  const initialCookieFileRef = useRef(initialPreferences.cookieFile)
+  const initialLanguageRef = useRef(initialPreferences.language)
   const [paths, setPaths] = useState<AppPaths | null>(null)
   const [cookieFiles, setCookieFiles] = useState<CookieFileInfo[]>([])
   const [linkInputs, setLinkInputs] = useState<string[]>([''])
@@ -375,6 +420,11 @@ function App() {
   const [history, setHistory] = useState<HistoryItem[]>(() => readHistory())
   const [selfCheckItems, setSelfCheckItems] = useState<SelfCheckItem[]>([])
   const [toolsSource, setToolsSource] = useState<'bundled' | 'external'>('external')
+  const [runtimeRefreshing, setRuntimeRefreshing] = useState(false)
+  const activeQueueSnapshotRef = useRef<ActiveQueueSnapshot>({
+    mode: initialPreferences.mode,
+    outputDir: initialPreferences.outputDir,
+  })
   const logViewerRef = useRef<HTMLDivElement | null>(null)
   const text = getText(language)
   const normalizedHeroTitle = text.heroTitle.replace(/[。.]$/, '')
@@ -404,18 +454,33 @@ function App() {
 
   useEffect(() => {
     if (!window.ytDlpApi) return
+    void (async () => {
+      setRuntimeRefreshing(true)
+      try {
+        const [nextPaths, selfCheckPayload, cookieItems] = await Promise.all([
+          window.ytDlpApi.getPaths(),
+          window.ytDlpApi.getSelfCheck(),
+          window.ytDlpApi.listCookieFiles(),
+        ])
 
-    void window.ytDlpApi.getPaths().then((payload) => {
-      setPaths(payload)
-      if (initialPreferences.outputDir === DEFAULT_PREFS.outputDir) {
-        setOutputDir((current) => (current === DEFAULT_PREFS.outputDir ? payload.defaultDownloadDir : current))
+        setPaths(nextPaths)
+        setSelfCheckItems(selfCheckPayload.items)
+        setToolsSource(selfCheckPayload.toolsSource)
+        setCookieFiles(sortCookieFiles(cookieItems, initialLanguageRef.current))
+        if (initialOutputDirRef.current === DEFAULT_PREFS.outputDir) {
+          setOutputDir((current) => (current === DEFAULT_PREFS.outputDir ? nextPaths.defaultDownloadDir : current))
+        }
+        if (initialCookieFileRef.current && !cookieItems.some((item) => item.path === initialCookieFileRef.current)) {
+          setCookieFile('')
+        }
+      } finally {
+        setRuntimeRefreshing(false)
       }
-    })
+    })()
+  }, [])
 
-    void window.ytDlpApi.getSelfCheck().then((payload) => {
-      setSelfCheckItems(payload.items)
-      setToolsSource(payload.toolsSource)
-    })
+  useEffect(() => {
+    if (!window.ytDlpApi) return
 
     const unsubscribe = window.ytDlpApi.onDownloadUpdate((event) => {
       if (event.type === 'log') {
@@ -442,16 +507,17 @@ function App() {
         if (!previous) setJobOrder((order) => [...order, nextJob.jobId])
         if (['success', 'error', 'cancelled'].includes(nextJob.status) && (!previous || previous.status !== nextJob.status)) {
           setHistory((currentHistory) => {
+            const queueSnapshot = activeQueueSnapshotRef.current
             const item: HistoryItem = {
               id: `${Date.now()}-${nextJob.jobId}`,
               urls: [nextJob.url],
-              mode,
-              outputDir,
+              mode: queueSnapshot.mode,
+              outputDir: queueSnapshot.outputDir,
               status: nextJob.status,
               outputPath: nextJob.outputPath,
               finishedAt: new Date().toISOString(),
             }
-            const updated = [item, ...currentHistory].slice(0, 20)
+            const updated = upsertHistoryItem(currentHistory, item)
             window.localStorage.setItem(HISTORY_KEY, JSON.stringify(updated))
             return updated
           })
@@ -462,23 +528,11 @@ function App() {
       if (nextJob.message) setStatusMessage(nextJob.message)
     })
     return unsubscribe
-  }, [initialPreferences.outputDir, mode, outputDir])
+  }, [])
 
   useEffect(() => {
-    if (!window.ytDlpApi) return
-
-    void window.ytDlpApi.listCookieFiles().then((items) => {
-      const sorted = [...items].sort((left, right) => {
-        const a = classifyCookieFile(left, language)
-        const b = classifyCookieFile(right, language)
-        return a.rank !== b.rank ? a.rank - b.rank : left.label.localeCompare(right.label)
-      })
-      setCookieFiles(sorted)
-      if (initialPreferences.cookieFile && !sorted.some((item) => item.path === initialPreferences.cookieFile)) {
-        setCookieFile('')
-      }
-    })
-  }, [initialPreferences.cookieFile, language])
+    setCookieFiles((current) => sortCookieFiles(current, language))
+  }, [language])
 
   useEffect(() => {
     const prefs: StoredPreferences = { outputDir, mode, audioFormat, audioQuality, videoPreset, language, theme, cookieFile, enabledExtraPresets }
@@ -491,7 +545,18 @@ function App() {
     container.scrollTop = container.scrollHeight
   }, [logs])
 
-  const urls = useMemo(() => linkInputs.map((item) => item.trim()).filter(Boolean), [linkInputs])
+  const urls = useMemo(() => {
+    const seen = new Set<string>()
+    return linkInputs
+      .map((item) => item.trim())
+      .filter((item) => {
+        if (!item || seen.has(item)) {
+          return false
+        }
+        seen.add(item)
+        return true
+      })
+  }, [linkInputs])
   const canStart = urls.length > 0 && outputDir.trim().length > 0 && queue.running === 0 && queue.pending === 0
   const bootstrapError = !window.ytDlpApi ? text.bootstrapError : null
   const effectiveStatus = bootstrapError ? 'error' : status
@@ -501,6 +566,40 @@ function App() {
   const sortedJobs = jobOrder.map((jobId) => jobs[jobId]).filter(Boolean)
   const combinedExtraArgs = mergeExtraArgs(enabledExtraPresets)
   const selectedCookieMeta = cookieFile ? cookieFiles.find((item) => item.path === cookieFile) : null
+  const canClearLinks = linkInputs.some((item) => item.trim().length > 0) || linkInputs.length > 1
+
+  async function refreshRuntimeState() {
+    if (!window.ytDlpApi) return
+
+    setRuntimeRefreshing(true)
+    try {
+      const [nextPaths, selfCheckPayload, cookieItems] = await Promise.all([
+        window.ytDlpApi.getPaths(),
+        window.ytDlpApi.getSelfCheck(),
+        window.ytDlpApi.listCookieFiles(),
+      ])
+
+      setPaths(nextPaths)
+      setSelfCheckItems(selfCheckPayload.items)
+      setToolsSource(selfCheckPayload.toolsSource)
+      setCookieFiles(sortCookieFiles(cookieItems, language))
+      if (initialOutputDirRef.current === DEFAULT_PREFS.outputDir) {
+        setOutputDir((current) => (current === DEFAULT_PREFS.outputDir ? nextPaths.defaultDownloadDir : current))
+      }
+      if (cookieFile && !cookieItems.some((item) => item.path === cookieFile)) {
+        setCookieFile('')
+      }
+      setStatus('idle')
+      setStatusMessage(nextPaths.denoPath ? text.refreshedWithDeno : text.refreshedWithoutDeno)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : text.refreshFailed
+      setStatus('error')
+      setStatusMessage(message)
+      setLogs((current) => [...current, `[ui] ${message}`].slice(-600))
+    } finally {
+      setRuntimeRefreshing(false)
+    }
+  }
 
   async function handlePickFolder() {
     const folder = await window.ytDlpApi.pickDirectory(outputDir)
@@ -512,9 +611,13 @@ function App() {
     setJobs({})
     setJobOrder([])
     setActiveCommand('')
+    activeQueueSnapshotRef.current = {
+      mode,
+      outputDir,
+    }
     setQueue({ total: urls.length, pending: urls.length, running: 0, completed: 0, failed: 0, cancelled: 0, concurrency: 1 })
     setStatus('running')
-    setStatusMessage(`Queue prepared with ${urls.length} URL(s).`)
+    setStatusMessage(text.queuePrepared.replace('{count}', String(urls.length)))
     try {
       await window.ytDlpApi.startDownload({
         urls,
@@ -536,6 +639,19 @@ function App() {
   }
 
   function updateLinkInput(index: number, value: string) {
+    if (value.includes('\n')) {
+      const nextUrls = value
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+      setLinkInputs((current) => {
+        const before = current.slice(0, index)
+        const after = current.slice(index + 1)
+        const merged = [...before, ...(nextUrls.length > 0 ? nextUrls : ['']), ...after]
+        return merged.length > 0 ? merged : ['']
+      })
+      return
+    }
     setLinkInputs((current) => current.map((item, itemIndex) => (itemIndex === index ? value : item)))
   }
 
@@ -550,6 +666,10 @@ function App() {
       }
       return current.filter((_, itemIndex) => itemIndex !== index)
     })
+  }
+
+  function clearLinkInputs() {
+    setLinkInputs([''])
   }
 
   function togglePreset(preset: ExtraPresetId) {
@@ -581,7 +701,7 @@ function App() {
     if (data.mode === 'video' || data.mode === 'audio') setMode(data.mode)
     if (data.audioFormat === 'mp3' || data.audioFormat === 'm4a' || data.audioFormat === 'wav' || data.audioFormat === 'opus') setAudioFormat(data.audioFormat)
     if (data.audioQuality === 'best' || data.audioQuality === '320k' || data.audioQuality === '192k' || data.audioQuality === '128k') setAudioQuality(data.audioQuality)
-    if (data.videoPreset === 'best' || data.videoPreset === '1080p' || data.videoPreset === '720p' || data.videoPreset === '480p') setVideoPreset(data.videoPreset)
+    if (data.videoPreset === 'best' || data.videoPreset === '2160p' || data.videoPreset === '1080p' || data.videoPreset === '720p' || data.videoPreset === '480p') setVideoPreset(data.videoPreset)
     if (data.language === 'zh' || data.language === 'en') setLanguage(data.language)
     if (data.theme === 'midnight' || data.theme === 'ember' || data.theme === 'aurora') setTheme(data.theme)
     if (Array.isArray(data.enabledExtraPresets)) {
@@ -613,7 +733,10 @@ function App() {
       <div className="shell__glow shell__glow--right" />
       <section className="hero panel">
         <div className="hero__toolbar">
-          <div className="eyebrow">YT-DLP STUDIO</div>
+          <div className="hero-brand">
+            <div className="eyebrow">YT-DLP STUDIO</div>
+            <div className="eyebrow brand-signature">DYFO</div>
+          </div>
           <div className="toolbar-group">
             <div className="toolbar-block">
               <span>{language === 'zh' ? '配置' : 'Config'}</span>
@@ -675,6 +798,11 @@ function App() {
               .map((item) => `${item.ok ? 'OK' : 'MISS'} ${item.label}: ${item.detail}`)
               .join('\n')}
           </code>
+          <div className="section-actions">
+            <button className="ghost-button ghost-button--small" type="button" disabled={runtimeRefreshing || queue.running > 0 || queue.pending > 0} onClick={() => void refreshRuntimeState()}>
+              {runtimeRefreshing ? text.refreshingTools : text.refreshTools}
+            </button>
+          </div>
           <div className="progress-meta progress-meta--wrap">
             <span>{language === 'zh' ? '工具来源' : 'Tool source'}: {toolsSource === 'bundled' ? (language === 'zh' ? '分享包内置' : 'Bundled') : (language === 'zh' ? '系统环境' : 'System')}</span>
           </div>
@@ -700,9 +828,15 @@ function App() {
                 </div>
               ))}
             </div>
-            <button className="ghost-button ghost-button--small" type="button" onClick={addLinkInput}>
-              + Add Link
-            </button>
+            <small className="field-help">{text.urlsHint}</small>
+            <div className="section-actions">
+              <button className="ghost-button ghost-button--small" type="button" onClick={addLinkInput}>
+                + {text.addLink}
+              </button>
+              <button className="ghost-button ghost-button--small" type="button" disabled={!canClearLinks} onClick={clearLinkInputs}>
+                {text.clearLinks}
+              </button>
+            </div>
           </div>
           <div className="field-group path-picker-group">
             <label className="field field--grow path-picker-field">
@@ -730,6 +864,7 @@ function App() {
                 <span>{text.videoPreset}</span>
                 <select value={videoPreset} onChange={(event) => setVideoPreset(event.target.value as VideoPreset)}>
                   <option value="best">{text.best}</option>
+                  <option value="2160p">{text.p2160}</option>
                   <option value="1080p">{text.p1080}</option>
                   <option value="720p">{text.p720}</option>
                   <option value="480p">{text.p480}</option>
@@ -826,7 +961,10 @@ function App() {
           <div className="history-list">
             {history.length === 0 ? <div className="history-empty">{text.noHistory}</div> : history.map((item) => (
               <button className="history-item" key={item.id} type="button" onClick={() => { setLinkInputs(Array.isArray(item.urls) && item.urls.length > 0 ? item.urls : ['']); setOutputDir(item.outputDir); setMode(item.mode); setStatusMessage(text.copiedFromHistory) }}>
-                <div><strong>{item.mode === 'audio' ? text.audioExtract : text.videoDownload}</strong><p>{(Array.isArray(item.urls) ? item.urls : []).join(' | ')}</p></div>
+                <div className="history-item__content">
+                  <strong>{item.mode === 'audio' ? text.audioExtract : text.videoDownload}</strong>
+                  <p>{(Array.isArray(item.urls) ? item.urls : []).join(' | ')}</p>
+                </div>
                 <div className={`history-badge history-badge--${item.status}`}>{statusLabel(item.status, text)}</div>
               </button>
             ))}

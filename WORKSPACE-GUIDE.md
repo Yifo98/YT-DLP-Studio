@@ -2,14 +2,10 @@
 
 ## Daily Use
 
-- `YT-DLP Studio.lnk`
-  - Root shortcut with icon. This is the easiest thing to click from the project root.
-- `daily-use/Launch YT-DLP Studio.bat`
-  - Daily launch entry.
-- `daily-use/Launch YT-DLP Studio.command`
-  - macOS daily launch entry. Double-click it from Finder.
+- `Launch YT-DLP Studio.command`
+  - macOS daily launch entry at the project root. Double-click it from Finder.
 - `release/win-unpacked/YT-DLP Studio.exe`
-  - The real built desktop app. Do not move this exe by itself out of `win-unpacked/`.
+  - The real built Windows desktop app. Do not move this exe by itself out of `win-unpacked/`.
 
 ## Share With Others
 

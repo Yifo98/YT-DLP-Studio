@@ -19,6 +19,7 @@
     "launch:mac": "zsh scripts/launch-mac.sh",
     "dist": "npm run build && electron-builder",
     "dist:mac": "zsh scripts/build-mac-share.sh",
+    "dist:win": "zsh scripts/build-win-share.sh",
     "dist:share": "powershell -ExecutionPolicy Bypass -File scripts/build-shareable-package.ps1"
   },
   "dependencies": {

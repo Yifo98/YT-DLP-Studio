@@ -2,7 +2,7 @@
 
 type DownloadMode = 'video' | 'audio'
 type AudioFormat = 'mp3' | 'm4a' | 'wav' | 'opus'
-type VideoPreset = 'best' | '1080p' | '720p' | '480p'
+type VideoPreset = 'best' | '2160p' | '1080p' | '720p' | '480p'
 type AudioQuality = 'best' | '320k' | '192k' | '128k'
 type DownloadStatus = 'idle' | 'running' | 'success' | 'error' | 'cancelled'
 
@@ -31,6 +31,29 @@ type SelfCheckItem = {
 type MediaToolAction = 'extractAudio' | 'extractSubtitles'
 type MediaAudioExportFormat = 'mp3' | 'wav' | 'flac' | 'm4a'
 type MediaSubtitleExportFormat = 'srt' | 'ass' | 'vtt'
+type SubtitleCleanupMode = 'single' | 'batch'
+
+type SubtitleCleanupConfig = {
+  baseUrl: string
+  apiKey: string
+  model: string
+  prompt: string
+  thinkingMode: 'default' | 'disabled'
+  customPresets: SubtitleCleanupCustomPreset[]
+  providerProfiles: Record<string, SubtitleCleanupProviderProfile>
+}
+
+type SubtitleCleanupCustomPreset = {
+  id: string
+  label: string
+  url: string
+}
+
+type SubtitleCleanupProviderProfile = {
+  baseUrl: string
+  apiKey: string
+  model: string
+}
 
 type MediaStreamInfo = {
   index: number
@@ -108,7 +131,17 @@ type MediaToolsUpdate =
   | { type: 'clear' }
   | { type: 'command'; command: string }
   | { type: 'log'; line: string; stream: 'stdout' | 'stderr' }
-  | { type: 'status'; status: DownloadStatus; message: string; outputs?: string[] }
+  | {
+      type: 'status'
+      status: DownloadStatus
+      message: string
+      outputs?: string[]
+      progress?: {
+        current: number
+        total: number
+        currentPath?: string
+      }
+    }
 
 type Unsubscribe = () => void
 
@@ -120,6 +153,7 @@ interface Window {
     openMediaTools: () => Promise<void>
     pickDirectory: (currentPath?: string) => Promise<string | null>
     pickMediaFile: (currentPath?: string) => Promise<string | null>
+    pickSubtitleFile: (currentPath?: string) => Promise<string | null>
     exportConfig: (config: unknown) => Promise<string | null>
     importConfig: () => Promise<unknown | null>
     startDownload: (request: DownloadRequest) => Promise<void>
@@ -134,6 +168,17 @@ interface Window {
       subtitleStreamIndexes: number[]
     }) => Promise<string[]>
     cancelMediaTool: () => Promise<void>
+    getSubtitleCleanupConfig: () => Promise<SubtitleCleanupConfig>
+    saveSubtitleCleanupConfig: (config: Partial<SubtitleCleanupConfig>) => Promise<SubtitleCleanupConfig>
+    listSubtitleCleanupModels: (config: Pick<SubtitleCleanupConfig, 'baseUrl' | 'apiKey'>) => Promise<string[]>
+    testSubtitleCleanupConnection: (config: SubtitleCleanupConfig) => Promise<{ ok: boolean; message: string }>
+    runSubtitleCleanup: (request: SubtitleCleanupConfig & {
+      mode: SubtitleCleanupMode
+      inputPath: string | null
+      inputDir: string | null
+      outputDir: string
+      skipExistingOutputs: boolean
+    }) => Promise<string[]>
     openPath: (targetPath: string) => Promise<void>
     openExternal: (targetUrl: string) => Promise<void>
     onDownloadUpdate: (listener: (payload: DownloadUpdate) => void) => Unsubscribe
