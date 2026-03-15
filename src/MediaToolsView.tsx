@@ -37,9 +37,9 @@ function persistUiPrefs(next: Partial<UiPrefs>) {
 function getDirectoryFromPath(filePath: string) {
   const normalized = filePath.trim()
   if (!normalized) return ''
-  const segments = normalized.split(/\\|\//)
-  if (segments.length <= 1) return normalized
-  return segments.slice(0, -1).join('\\')
+  const separatorIndex = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'))
+  if (separatorIndex < 0) return normalized
+  return normalized.slice(0, separatorIndex)
 }
 
 function formatDuration(seconds: number | null, language: Language) {

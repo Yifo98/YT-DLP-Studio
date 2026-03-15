@@ -116,7 +116,7 @@ interface Window {
   ytDlpApi: {
     getPaths: () => Promise<AppPaths>
     listCookieFiles: () => Promise<CookieFileInfo[]>
-    getSelfCheck: () => Promise<{ items: SelfCheckItem[]; toolsSource: 'bundled' | 'conda' }>
+    getSelfCheck: () => Promise<{ items: SelfCheckItem[]; toolsSource: 'bundled' | 'external' }>
     openMediaTools: () => Promise<void>
     pickDirectory: (currentPath?: string) => Promise<string | null>
     pickMediaFile: (currentPath?: string) => Promise<string | null>

@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, dirname, relative, parse } from 'node:path'
+import { delimiter, dirname, isAbsolute, join, parse, relative } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { fileURLToPath } from 'node:url'
 
@@ -102,11 +102,26 @@ type JobContext = {
   process: ChildProcessWithoutNullStreams
 }
 
-const envRoot = 'C:\\Users\\84027\\.conda\\envs\\yt-dlp'
+const isWindows = process.platform === 'win32'
+const envRoot = process.env.YTDLP_ENV_ROOT
+  ?? (
+    isWindows
+      ? 'C:\\Users\\84027\\.conda\\envs\\yt-dlp'
+      : join(homedir(), '.conda', 'envs', 'yt-dlp')
+  )
 const denoCandidates = [
-  'C:\\Users\\84027\\AppData\\Local\\Microsoft\\WinGet\\Packages\\DenoLand.Deno_Microsoft.Winget.Source_8wekyb3d8bbwe\\deno.exe',
-  'C:\\Program Files\\Deno\\bin\\deno.exe',
-]
+  process.env.DENO_BIN,
+  ...(isWindows
+    ? [
+        'C:\\Users\\84027\\AppData\\Local\\Microsoft\\WinGet\\Packages\\DenoLand.Deno_Microsoft.Winget.Source_8wekyb3d8bbwe\\deno.exe',
+        'C:\\Program Files\\Deno\\bin\\deno.exe',
+      ]
+    : [
+        join(homedir(), '.deno', 'bin', 'deno'),
+        '/opt/homebrew/bin/deno',
+        '/usr/local/bin/deno',
+      ]),
+].filter((value): value is string => Boolean(value))
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const rendererDist = join(__dirname, '..', 'dist')
@@ -131,9 +146,14 @@ let activeMediaProcess: ChildProcessWithoutNullStreams | null = null
 let mediaCancelled = false
 
 function ensureDirectory(dirPath: string) {
-  if (!existsSync(dirPath)) {
-    mkdirSync(dirPath, { recursive: true })
+  if (existsSync(dirPath)) {
+    if (!statSync(dirPath).isDirectory()) {
+      throw new Error(`Expected a directory but found a file at: ${dirPath}`)
+    }
+    return dirPath
   }
+
+  mkdirSync(dirPath, { recursive: true })
   return dirPath
 }
 
@@ -149,31 +169,151 @@ function getPortableRootDir() {
   return dirname(process.execPath)
 }
 
-function getFallbackToolsDir() {
-  return join(envRoot, 'Scripts')
+function uniquePaths(paths: Array<string | undefined>) {
+  return [...new Set(paths.filter((value): value is string => Boolean(value)))]
 }
 
-function getToolsDir() {
-  const candidates = [
-    getBundledToolsDir(),
-    join(getPortableRootDir(), 'tools'),
-    join(getDevRootDir(), 'tools'),
-    getFallbackToolsDir(),
-  ]
+function getExecutableName(name: string) {
+  return isWindows ? `${name}.exe` : name
+}
 
-  for (const candidate of candidates) {
-    const bundledYtDlpPath = join(candidate, 'yt-dlp.exe')
-    if (existsSync(bundledYtDlpPath)) {
-      return candidate
+function getManagedToolBinDirs() {
+  const bundledToolsDir = getBundledToolsDir()
+
+  return uniquePaths([
+    join(bundledToolsDir, 'bin'),
+    bundledToolsDir,
+    join(getPortableRootDir(), 'tools', 'bin'),
+    join(getPortableRootDir(), 'tools'),
+    join(getDevRootDir(), 'tools', 'bin'),
+    join(getDevRootDir(), 'tools'),
+  ])
+}
+
+function getManagedToolLibDirs() {
+  const bundledToolsDir = getBundledToolsDir()
+
+  return uniquePaths([
+    join(bundledToolsDir, 'lib'),
+    join(getPortableRootDir(), 'tools', 'lib'),
+    join(getDevRootDir(), 'tools', 'lib'),
+  ])
+}
+
+function getManagedToolsDirs() {
+  return getManagedToolBinDirs()
+}
+
+function getFallbackToolDirs() {
+  return uniquePaths([
+    process.env.YTDLP_TOOLS_DIR,
+    join(envRoot, isWindows ? 'Scripts' : 'bin'),
+    ...(isWindows ? [] : ['/opt/homebrew/bin', '/usr/local/bin']),
+  ])
+}
+
+function findExecutableInDirectory(directory: string, name: string) {
+  const candidatePath = join(directory, getExecutableName(name))
+  return existsSync(candidatePath) ? candidatePath : null
+}
+
+function findExecutableInPath(name: string) {
+  const pathEntries = (process.env.PATH ?? '').split(delimiter).filter(Boolean)
+
+  for (const entry of uniquePaths(pathEntries)) {
+    const candidatePath = findExecutableInDirectory(entry, name)
+    if (candidatePath) {
+      return candidatePath
     }
   }
 
-  return getFallbackToolsDir()
+  return null
+}
+
+function resolveExecutablePath(name: string) {
+  const searchDirs = [
+    ...getManagedToolsDirs(),
+    ...getFallbackToolDirs(),
+  ]
+
+  for (const directory of searchDirs) {
+    const candidatePath = findExecutableInDirectory(directory, name)
+    if (candidatePath) {
+      return candidatePath
+    }
+  }
+
+  return findExecutableInPath(name)
+}
+
+function isPathInside(parentDir: string, targetPath: string) {
+  const nestedPath = relative(parentDir, targetPath)
+  return nestedPath === '' || (!nestedPath.startsWith('..') && !isAbsolute(nestedPath))
+}
+
+function getToolsSource() {
+  const ytDlpPath = resolveExecutablePath('yt-dlp')
+  if (!ytDlpPath) {
+    return 'external' as const
+  }
+
+  return getManagedToolsDirs().some((directory) => isPathInside(directory, ytDlpPath))
+    ? 'bundled'
+    : 'external'
+}
+
+function getEnvironmentLabel() {
+  const ytDlpPath = resolveExecutablePath('yt-dlp')
+  if (!ytDlpPath) {
+    return 'system-path'
+  }
+
+  if (getManagedToolsDirs().some((directory) => isPathInside(directory, ytDlpPath))) {
+    return 'portable-tools'
+  }
+
+  if (isPathInside(envRoot, ytDlpPath)) {
+    return 'conda-env'
+  }
+
+  if (ytDlpPath.startsWith('/opt/homebrew')) {
+    return 'homebrew'
+  }
+
+  return 'system-path'
+}
+
+function collectToolPathEntries() {
+  const resolvedToolDirs = [
+    getYtDlpPath(),
+    getFfmpegPath(),
+    getFfprobePath(),
+  ]
+    .filter((value) => isAbsolute(value))
+    .map((value) => dirname(value))
+
+  return uniquePaths([
+    ...resolvedToolDirs,
+    ...getManagedToolBinDirs(),
+    ...getFallbackToolDirs(),
+    ...(process.env.PATH ?? '').split(delimiter).filter(Boolean),
+  ])
+}
+
+function buildToolPathEnv() {
+  return collectToolPathEntries().join(delimiter)
+}
+
+function buildDyldLibraryPathEnv() {
+  return uniquePaths([
+    ...getManagedToolLibDirs(),
+    process.env.DYLD_LIBRARY_PATH,
+  ]).join(delimiter)
 }
 
 function getCookiesDir() {
   const targetDir = app.isPackaged
-    ? join(app.getPath('userData'), 'cookies')
+    ? join(app.getPath('userData'), 'cookie-files')
     : join(getDevRootDir(), 'cookies')
 
   return ensureDirectory(targetDir)
@@ -207,15 +347,15 @@ function resolveDialogStartDirectory(inputPath?: string) {
 }
 
 function getYtDlpPath() {
-  return join(getToolsDir(), 'yt-dlp.exe')
+  return resolveExecutablePath('yt-dlp') ?? getExecutableName('yt-dlp')
 }
 
 function getFfmpegPath() {
-  return join(getToolsDir(), 'ffmpeg.exe')
+  return resolveExecutablePath('ffmpeg') ?? getExecutableName('ffmpeg')
 }
 
 function getFfprobePath() {
-  return join(getToolsDir(), 'ffprobe.exe')
+  return resolveExecutablePath('ffprobe') ?? getExecutableName('ffprobe')
 }
 
 function getSelfCheckItems(): SelfCheckItem[] {
@@ -228,19 +368,19 @@ function getSelfCheckItems(): SelfCheckItem[] {
     {
       key: 'yt-dlp',
       label: 'yt-dlp',
-      ok: existsSync(ytDlpPath),
+      ok: ytDlpPath !== getExecutableName('yt-dlp') || Boolean(findExecutableInPath('yt-dlp')),
       detail: ytDlpPath,
     },
     {
       key: 'ffmpeg',
       label: 'ffmpeg',
-      ok: existsSync(ffmpegPath),
+      ok: ffmpegPath !== getExecutableName('ffmpeg') || Boolean(findExecutableInPath('ffmpeg')),
       detail: ffmpegPath,
     },
     {
       key: 'ffprobe',
       label: 'ffprobe',
-      ok: existsSync(ffprobePath),
+      ok: ffprobePath !== getExecutableName('ffprobe') || Boolean(findExecutableInPath('ffprobe')),
       detail: ffprobePath,
     },
     {
@@ -379,7 +519,7 @@ function audioQualityToValue(value: AudioQuality) {
 }
 
 function buildArgs(request: DownloadRequest, url: string) {
-  const toolsDir = getToolsDir()
+  const ffmpegPath = getFfmpegPath()
   const extraArgs = tokenizeExtraArgs(request.extraArgs.trim())
   const skipDownload = extraArgs.includes('--skip-download')
   const args = [
@@ -391,7 +531,7 @@ function buildArgs(request: DownloadRequest, url: string) {
     '--print',
     'after_move:FILEPATH|%(filepath)s',
     '--ffmpeg-location',
-    toolsDir,
+    isAbsolute(ffmpegPath) ? dirname(ffmpegPath) : ffmpegPath,
     '-o',
     join(request.outputDir, '%(title)s [%(id)s].%(ext)s'),
   ]
@@ -526,7 +666,8 @@ async function runLoggedProcess(executable: string, args: string[], cwd: string)
       cwd,
       env: {
         ...process.env,
-        PATH: `${getToolsDir()};${process.env.PATH ?? ''}`,
+        PATH: buildToolPathEnv(),
+        DYLD_LIBRARY_PATH: buildDyldLibraryPathEnv(),
       },
     })
 
@@ -711,13 +852,13 @@ function startNextJobs() {
     emitLog(`> ${command}`, 'system', next.jobId)
     emitJob(snapshot)
 
-    const toolsDir = getToolsDir()
     const ytDlpPath = getYtDlpPath()
     const child = spawn(ytDlpPath, args, {
       cwd: activeBatchRequest.outputDir,
       env: {
         ...process.env,
-        PATH: `${toolsDir};${process.env.PATH ?? ''}`,
+        PATH: buildToolPathEnv(),
+        DYLD_LIBRARY_PATH: buildDyldLibraryPathEnv(),
         PYTHONIOENCODING: 'utf-8',
         PYTHONUTF8: '1',
       },
@@ -910,8 +1051,33 @@ function createAppWindow(hash = '') {
   win.webContents.on('render-process-gone', (_event, details) => {
     console.error('[electron] render-process-gone', details)
   })
-  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-    console.log('[renderer]', { level, message, line, sourceId })
+  win.webContents.on('console-message', (_event, detailsOrLevel: unknown, message?: string, line?: number, sourceId?: string) => {
+    if (
+      typeof detailsOrLevel === 'object'
+      && detailsOrLevel !== null
+      && 'message' in detailsOrLevel
+    ) {
+      const details = detailsOrLevel as {
+        level?: number
+        message?: string
+        lineNumber?: number
+        sourceId?: string
+      }
+      console.log('[renderer]', {
+        level: details.level,
+        message: details.message,
+        line: details.lineNumber,
+        sourceId: details.sourceId,
+      })
+      return
+    }
+
+    console.log('[renderer]', {
+      level: detailsOrLevel,
+      message,
+      line,
+      sourceId,
+    })
   })
 
   if (devServerUrl) {
@@ -971,7 +1137,7 @@ ipcMain.handle('paths:get', () => ({
   ffprobePath: getFfprobePath(),
   denoPath: getDenoPath(),
   defaultDownloadDir: resolveDefaultDownloads(),
-  envName: getToolsDir() === getFallbackToolsDir() ? 'yt-dlp' : 'portable-tools',
+  envName: getEnvironmentLabel(),
   cookiesDir: getCookiesDir(),
 }))
 
@@ -979,7 +1145,7 @@ ipcMain.handle('cookies:list', () => listCookieFilesRecursive(getCookiesDir()))
 
 ipcMain.handle('self-check:get', () => ({
   items: getSelfCheckItems(),
-  toolsSource: getToolsDir() === getFallbackToolsDir() ? 'conda' : 'bundled',
+  toolsSource: getToolsSource(),
 }))
 
 ipcMain.handle('window:openMediaTools', () => {

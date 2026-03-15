@@ -41,7 +41,7 @@ const STORAGE_KEY = 'yt-dlp-studio.preferences'
 const HISTORY_KEY = 'yt-dlp-studio.history'
 
 const DEFAULT_PREFS: StoredPreferences = {
-  outputDir: 'C:\\Users\\84027\\Downloads',
+  outputDir: '',
   mode: 'video',
   audioFormat: 'mp3',
   audioQuality: 'best',
@@ -374,7 +374,7 @@ function App() {
   const [activeCommand, setActiveCommand] = useState('')
   const [history, setHistory] = useState<HistoryItem[]>(() => readHistory())
   const [selfCheckItems, setSelfCheckItems] = useState<SelfCheckItem[]>([])
-  const [toolsSource, setToolsSource] = useState<'bundled' | 'conda'>('conda')
+  const [toolsSource, setToolsSource] = useState<'bundled' | 'external'>('external')
   const logViewerRef = useRef<HTMLDivElement | null>(null)
   const text = getText(language)
   const normalizedHeroTitle = text.heroTitle.replace(/[。.]$/, '')
@@ -676,7 +676,7 @@ function App() {
               .join('\n')}
           </code>
           <div className="progress-meta progress-meta--wrap">
-            <span>{language === 'zh' ? '工具来源' : 'Tool source'}: {toolsSource === 'bundled' ? (language === 'zh' ? '分享包内置' : 'Bundled') : 'Conda'}</span>
+            <span>{language === 'zh' ? '工具来源' : 'Tool source'}: {toolsSource === 'bundled' ? (language === 'zh' ? '分享包内置' : 'Bundled') : (language === 'zh' ? '系统环境' : 'System')}</span>
           </div>
         </div>
       </section>
@@ -769,7 +769,7 @@ function App() {
             <label className="field field--button">
               <span>Cookies</span>
               <div className="cookie-helper-actions">
-                <button className="ghost-button ghost-button--full" type="button" onClick={() => void window.ytDlpApi.openPath(paths?.cookiesDir ?? 'I:\\yt-dlp\\cookies')}>{text.openCookiesDir}</button>
+                <button className="ghost-button ghost-button--full" type="button" onClick={() => void window.ytDlpApi.openPath(paths?.cookiesDir ?? '')}>{text.openCookiesDir}</button>
                 <button className="ghost-button ghost-button--full" type="button" onClick={() => void window.ytDlpApi.openExternal(cookiesPluginUrl)}>{cookiesPluginButton}</button>
               </div>
               <small className="field-help">{cookiesPluginLabel}</small>

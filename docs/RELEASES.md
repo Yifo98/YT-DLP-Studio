@@ -12,7 +12,7 @@
 - `YT-DLP-Studio-win-x64.zip`
   说明：Windows 推荐下载，解压后运行 `YT-DLP Studio.exe`
 - macOS 资产
-  说明：后续版本持续完善
+  说明：可发布 `dmg` / `zip`，未内置工具时建议同时注明依赖系统环境
 
 ## 推荐发布文案
 
@@ -22,7 +22,7 @@
 YT-DLP Studio vX.Y.Z
 
 - Windows 压缩包：解压即用
-- macOS：后续版本持续完善
+- macOS：支持从系统环境读取 yt-dlp / ffmpeg / ffprobe / deno
 
 默认情况下不需要额外安装 ffmpeg、ffprobe、yt-dlp 或 Conda。
 如果某个资产明确标注为 Lite、tools not bundled 或 UI-only，请按说明先准备对应环境。
@@ -57,7 +57,7 @@ Windows 首次运行时，可能会看到系统安全提示。
 
 - `YT-DLP-Studio-win-x64.zip`
 - `YT-DLP-Studio-win-portable.exe`
-- `YT-DLP-Studio-macos-universal.zip`
+- `YT-DLP-Studio-macos.zip`
 - `YT-DLP-Studio-macos.dmg`
 - `YT-DLP-Studio-macos.pkg`
 
@@ -73,7 +73,7 @@ Windows 首次运行时，可能会看到系统安全提示。
 - `YT-DLP-Studio-win-x64.zip`
   Notes: recommended Windows build, unzip and run `YT-DLP Studio.exe`
 - macOS assets
-  Notes: support is still in progress
+  Notes: `dmg` / `zip` builds are supported; mention system-tool fallback when tools are not bundled
 
 ## Recommended Release Copy
 
@@ -83,7 +83,7 @@ Windows 首次运行时，可能会看到系统安全提示。
 YT-DLP Studio vX.Y.Z
 
 - Windows zip: unzip and use
-- macOS support is still in progress
+- macOS: can use yt-dlp / ffmpeg / ffprobe / deno from the system environment
 
 No extra setup is required by default.
 If an asset is labeled Lite, tools-not-bundled, or UI-only, please install the required tools first.
