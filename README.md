@@ -4,8 +4,6 @@
 
 YT-DLP Studio 是一个给 `yt-dlp` 准备的桌面控制台，把链接下载、`cookies.txt` 选择和本地媒体后处理整理到同一个界面里。
 
-English summary is included below. GitHub README 本身不支持真正的界面式语言切换，所以这里改成顺排双语说明，不再靠跳转锚点假装切换。
-
 ## 下载
 
 - [前往 GitHub Releases 下载](https://github.com/Yifo98/YT-DLP-Studio/releases/latest)
