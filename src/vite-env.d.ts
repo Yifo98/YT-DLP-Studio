@@ -146,6 +146,7 @@ type MediaToolsUpdate =
 type Unsubscribe = () => void
 
 interface Window {
+  appApi: Window['ytDlpApi']
   ytDlpApi: {
     getPaths: () => Promise<AppPaths>
     listCookieFiles: () => Promise<CookieFileInfo[]>

@@ -9,6 +9,8 @@ TOOLS_DIR="$PROJECT_ROOT/tools"
 TOOLS_BIN_DIR="$TOOLS_DIR/bin"
 TOOLS_LIB_DIR="$TOOLS_DIR/lib"
 README_PATH="$RELEASE_DIR/README-mac.txt"
+APP_VERSION="$(node -p "require('$PROJECT_ROOT/package.json').version")"
+VERSION_DIR="$RELEASE_DIR/$APP_VERSION"
 DEFAULT_ENV_ROOT="$HOME/.conda/envs/yt-dlp"
 ENV_ROOT="${YTDLP_ENV_ROOT:-$DEFAULT_ENV_ROOT}"
 ARCH_NAME="$(uname -m)"
@@ -32,16 +34,58 @@ esac
 
 YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp"
 DENO_URL="https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/${DENO_ARCHIVE_NAME}"
+ZIP_PRIVACY_PATTERN='cookie|history|config\.json|user[- ]data|electron-session|electron-user-data|subtitle-cleanup-config|api[_-]?key'
 
 cleanup_tools() {
   rm -rf "$TOOLS_BIN_DIR" "$TOOLS_LIB_DIR"
 }
 
+prepare_release_dir() {
+  mkdir -p "$RELEASE_DIR" "$VERSION_DIR"
+  rm -rf "$RELEASE_DIR"/win-unpacked "$RELEASE_DIR"/mac-unpacked
+  rm -f "$RELEASE_DIR"/.DS_Store(N) "$VERSION_DIR"/.DS_Store(N)
+  rm -f "$RELEASE_DIR"/*mac*.zip(N) "$RELEASE_DIR"/*mac*.zip.blockmap(N) "$RELEASE_DIR"/*.txt(N) "$RELEASE_DIR"/latest-mac.yml(N)
+  rm -f "$VERSION_DIR"/*mac*.zip(N) "$VERSION_DIR"/*.txt(N) "$VERSION_DIR"/latest-mac.yml(N)
+}
+
+write_release_notes() {
+  cat > "$VERSION_DIR/RELEASE-NOTES.md" <<EOF
+# YT-DLP Studio $APP_VERSION
+
+## Summary
+
+This release refreshes the shared desktop package with the latest download flow and telemetry improvements.
+
+## Included artifacts
+
+- \`YT-DLP Studio-$APP_VERSION-arm64-mac.zip\`
+- \`YT-DLP Studio-$APP_VERSION-win.zip\`
+- \`YT-DLP Studio $APP_VERSION.exe\`
+- \`README-mac.txt\`
+
+## Highlights
+
+- Fixed real-time download progress so active jobs now report incremental progress instead of jumping straight to 100 percent
+- Reworked the download panel so the main action buttons are easier to reach
+- Split telemetry into clearer sections for queue overview and active download focus
+- Kept bundled \`yt-dlp\` \`ffmpeg\` \`ffprobe\` and \`deno\` inside the standard shared builds
+- Refined runtime refresh cookies guidance and local media tool integration
+
+## Packaging and privacy
+
+- Shared builds are intended to be unpack-and-run
+- Packaging scripts now clear old platform artifacts before building new ones
+- Packaging scripts verify that cookies history user-data session files subtitle cleanup configs API keys and similar private files are not included in release archives
+- macOS and Windows builds are currently unsigned so first-run security prompts are expected
+EOF
+}
+
 trap cleanup_tools EXIT
 
-mkdir -p "$TOOLS_DIR" "$RELEASE_DIR"
+mkdir -p "$TOOLS_DIR"
 cleanup_tools
 mkdir -p "$TOOLS_BIN_DIR" "$TOOLS_LIB_DIR"
+prepare_release_dir
 
 cd "$PROJECT_ROOT"
 
@@ -134,6 +178,17 @@ done
 npm run build
 npx electron-builder --mac zip "$BUILDER_ARCH_FLAG"
 
+MAC_ZIP="$(find "$RELEASE_DIR" -maxdepth 1 -type f -name '*mac.zip' | head -n 1)"
+if [[ -z "$MAC_ZIP" ]]; then
+  echo "macOS zip artifact was not created as expected."
+  exit 1
+fi
+
+if unzip -l "$MAC_ZIP" | grep -Eiq "$ZIP_PRIVACY_PATTERN"; then
+  echo "Sensitive files were detected inside the macOS zip artifact."
+  exit 1
+fi
+
 cat > "$README_PATH" <<'EOF'
 YT-DLP Studio for macOS
 
@@ -148,11 +203,16 @@ If Gatekeeper warns about the app being unsigned, use "Open Anyway" from
 System Settings or right-click the app and choose "Open".
 EOF
 
+cp "$MAC_ZIP" "$VERSION_DIR/"
+cp "$README_PATH" "$VERSION_DIR/"
+rm -f "$RELEASE_DIR"/*mac*.zip.blockmap(N) "$RELEASE_DIR"/latest-mac.yml(N)
+write_release_notes
+
 echo "macOS app bundle:"
 find "$RELEASE_DIR" -maxdepth 2 -name 'YT-DLP Studio.app' -print
 echo
 echo "macOS zip artifact:"
-find "$RELEASE_DIR" -maxdepth 1 -name '*.zip' -print
+echo "$MAC_ZIP"
 echo
 echo "Share notes:"
 echo "$README_PATH"

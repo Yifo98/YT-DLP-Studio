@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
-contextBridge.exposeInMainWorld('ytDlpApi', {
+const appApi = {
   getPaths: () => ipcRenderer.invoke('paths:get'),
   listCookieFiles: () => ipcRenderer.invoke('cookies:list'),
   getSelfCheck: () => ipcRenderer.invoke('self-check:get'),
@@ -33,4 +33,7 @@ contextBridge.exposeInMainWorld('ytDlpApi', {
     ipcRenderer.on('media-tools:update', wrapped)
     return () => ipcRenderer.removeListener('media-tools:update', wrapped)
   },
-})
+}
+
+contextBridge.exposeInMainWorld('ytDlpApi', appApi)
+contextBridge.exposeInMainWorld('appApi', appApi)

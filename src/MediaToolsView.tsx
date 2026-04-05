@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { appApi } from './services/appApi'
+import { readJsonStorage, writeJsonStorage } from './services/localStore'
 
 type Language = 'zh' | 'en'
 type Theme = 'midnight' | 'ember' | 'aurora'
@@ -22,24 +24,16 @@ type UiPrefs = {
 }
 
 function readUiPrefs(): UiPrefs {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) {
-      return { language: 'zh', theme: 'midnight' }
-    }
-    const parsed = JSON.parse(raw) as Partial<UiPrefs>
-    return {
-      language: parsed.language === 'en' ? 'en' : 'zh',
-      theme: parsed.theme === 'ember' || parsed.theme === 'aurora' ? parsed.theme : 'midnight',
-    }
-  } catch {
-    return { language: 'zh', theme: 'midnight' }
+  const parsed = readJsonStorage<Partial<UiPrefs>>(STORAGE_KEY, {})
+  return {
+    language: parsed.language === 'en' ? 'en' : 'zh',
+    theme: parsed.theme === 'ember' || parsed.theme === 'aurora' ? parsed.theme : 'midnight',
   }
 }
 
 function persistUiPrefs(next: Partial<UiPrefs>) {
   const current = readUiPrefs()
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...current, ...next }))
+  writeJsonStorage(STORAGE_KEY, { ...current, ...next })
 }
 
 function getDirectoryFromPath(filePath: string) {
@@ -560,13 +554,13 @@ export default function MediaToolsView() {
   }, [language])
 
   async function refreshRuntimeState() {
-    if (!window.ytDlpApi) return
+    if (!appApi) return
 
     setRuntimeRefreshing(true)
     try {
       const [nextPaths, selfCheckPayload] = await Promise.all([
-        window.ytDlpApi.getPaths(),
-        window.ytDlpApi.getSelfCheck(),
+        appApi.getPaths(),
+        appApi.getSelfCheck(),
       ])
       setRuntimePaths(nextPaths)
       setRuntimeToolsSource(selfCheckPayload.toolsSource)
@@ -583,7 +577,7 @@ export default function MediaToolsView() {
   }
 
   useEffect(() => {
-    const unsubscribe = window.ytDlpApi.onMediaToolsUpdate((payload) => {
+    const unsubscribe = appApi.onMediaToolsUpdate((payload) => {
       if (payload.type === 'clear') {
         setLogs([])
         setOutputs([])
@@ -624,13 +618,13 @@ export default function MediaToolsView() {
   }, [])
 
   useEffect(() => {
-    if (!window.ytDlpApi) return
+    if (!appApi) return
     void (async () => {
       setRuntimeRefreshing(true)
       try {
         const [nextPaths, selfCheckPayload] = await Promise.all([
-          window.ytDlpApi.getPaths(),
-          window.ytDlpApi.getSelfCheck(),
+          appApi.getPaths(),
+          appApi.getSelfCheck(),
         ])
         setRuntimePaths(nextPaths)
         setRuntimeToolsSource(selfCheckPayload.toolsSource)
@@ -644,7 +638,7 @@ export default function MediaToolsView() {
   }, [])
 
   useEffect(() => {
-    void window.ytDlpApi.getSubtitleCleanupConfig().then((config) => {
+    void appApi.getSubtitleCleanupConfig().then((config) => {
       setCleanupConfig(config)
       setCleanupModelOptions((current) => mergeModelOptions(current, config.model))
       const initialPresets = [...getCleanupBaseUrlPresets(initialUi.language), ...getSavedCleanupBaseUrlPresets(config.customPresets)]
@@ -664,7 +658,7 @@ export default function MediaToolsView() {
     if (!cleanupConfigHydrated) {
       return
     }
-    void window.ytDlpApi.saveSubtitleCleanupConfig(cleanupConfig)
+    void appApi.saveSubtitleCleanupConfig(cleanupConfig)
   }, [cleanupConfig, cleanupConfigHydrated])
 
   function updateCleanupConfig(next: Partial<SubtitleCleanupConfig>) {
@@ -732,7 +726,7 @@ export default function MediaToolsView() {
   }
 
   async function pickMediaFile() {
-    const selected = await window.ytDlpApi.pickMediaFile(inputPath || undefined)
+    const selected = await appApi.pickMediaFile(inputPath || undefined)
     if (!selected) return
     setInputPath(selected)
     if (!outputDir) {
@@ -742,12 +736,12 @@ export default function MediaToolsView() {
   }
 
   async function pickOutputDir() {
-    const selected = await window.ytDlpApi.pickDirectory(outputDir || undefined)
+    const selected = await appApi.pickDirectory(outputDir || undefined)
     if (selected) setOutputDir(selected)
   }
 
   async function pickCleanupFile() {
-    const selected = await window.ytDlpApi.pickSubtitleFile(cleanupInputPath || cleanupOutputDir || outputDir || undefined)
+    const selected = await appApi.pickSubtitleFile(cleanupInputPath || cleanupOutputDir || outputDir || undefined)
     if (!selected) return
     setCleanupInputPath(selected)
     if (!cleanupOutputDir) {
@@ -759,7 +753,7 @@ export default function MediaToolsView() {
   }
 
   async function pickCleanupFolder() {
-    const selected = await window.ytDlpApi.pickDirectory(cleanupInputDir || cleanupOutputDir || outputDir || undefined)
+    const selected = await appApi.pickDirectory(cleanupInputDir || cleanupOutputDir || outputDir || undefined)
     if (!selected) return
     setCleanupInputDir(selected)
     if (!cleanupOutputDir) {
@@ -771,7 +765,7 @@ export default function MediaToolsView() {
   }
 
   async function pickCleanupOutputDir() {
-    const selected = await window.ytDlpApi.pickDirectory(cleanupOutputDir || cleanupInputDir || outputDir || undefined)
+    const selected = await appApi.pickDirectory(cleanupOutputDir || cleanupInputDir || outputDir || undefined)
     if (selected) {
       setCleanupOutputDir(selected)
     }
@@ -785,7 +779,7 @@ export default function MediaToolsView() {
     }
 
     try {
-      const result = await window.ytDlpApi.inspectMedia(filePath)
+      const result = await appApi.inspectMedia(filePath)
       setInspection(result)
       setStatus('success')
       setStatusMessage(copy.fileReady)
@@ -841,7 +835,7 @@ export default function MediaToolsView() {
     for (const action of selectedActions) {
       try {
         setRunningTaskLabel(action === 'extractAudio' ? copy.extractAudio : copy.extractSubtitles)
-        await window.ytDlpApi.runMediaTool({
+        await appApi.runMediaTool({
           action,
           inputPath,
           outputDir,
@@ -873,7 +867,7 @@ export default function MediaToolsView() {
     setCleanupConnectionMessage('')
 
     try {
-      const models = await window.ytDlpApi.listSubtitleCleanupModels({
+      const models = await appApi.listSubtitleCleanupModels({
         baseUrl: cleanupConfig.baseUrl,
         apiKey: cleanupConfig.apiKey,
       })
@@ -907,7 +901,7 @@ export default function MediaToolsView() {
     setCleanupConnectionMessage('')
 
     try {
-      const result = await window.ytDlpApi.testSubtitleCleanupConnection(cleanupConfig)
+      const result = await appApi.testSubtitleCleanupConnection(cleanupConfig)
       setCleanupConnectionState(result.ok ? 'success' : 'error')
       setCleanupConnectionMessage(result.message)
       setStatus('success')
@@ -1024,7 +1018,7 @@ export default function MediaToolsView() {
     setRunningTaskLabel(mode === 'single' ? copy.cleanupRunSingle : copy.cleanupRunBatch)
 
     try {
-      await window.ytDlpApi.runSubtitleCleanup({
+      await appApi.runSubtitleCleanup({
         ...cleanupConfig,
         mode,
         inputPath: mode === 'single' ? cleanupInputPath : null,
@@ -1147,7 +1141,7 @@ export default function MediaToolsView() {
               </div>
               <div className="action-row media-toolbar-actions">
                 <button className="ghost-button" type="button" onClick={() => void inspect()}>{inspection ? copy.refresh : copy.inspect}</button>
-                <button className="ghost-button" type="button" onClick={() => void window.ytDlpApi.openPath(outputDir || inputPath || cleanupInputPath || cleanupInputDir)}>{copy.openFolder}</button>
+                <button className="ghost-button" type="button" onClick={() => void appApi.openPath(outputDir || inputPath || cleanupInputPath || cleanupInputDir)}>{copy.openFolder}</button>
                 <button className="ghost-button" type="button" onClick={() => window.close()}>{copy.closeWindow}</button>
               </div>
             </section>
@@ -1183,7 +1177,7 @@ export default function MediaToolsView() {
                   {!hasSubtitleStream && inspection ? (
                     <div className="media-inline-note media-inline-note--warning">
                       <span>{copy.subtitleExternalHint}</span>
-                      <button className="ghost-button ghost-button--small" type="button" onClick={() => void window.ytDlpApi.openExternal(SUBTITLE_EDIT_RELEASES_URL)}>
+                      <button className="ghost-button ghost-button--small" type="button" onClick={() => void appApi.openExternal(SUBTITLE_EDIT_RELEASES_URL)}>
                         {copy.subtitleExternalAction}
                       </button>
                     </div>
@@ -1262,7 +1256,7 @@ export default function MediaToolsView() {
                     <button className="primary-button media-run-button" type="button" disabled={status === 'running' || selectedActions.length === 0} onClick={() => void runSelectedActions()}>
                       {copy.run}
                     </button>
-                    <button className="ghost-button" type="button" disabled={status !== 'running'} onClick={() => void window.ytDlpApi.cancelMediaTool()}>
+                    <button className="ghost-button" type="button" disabled={status !== 'running'} onClick={() => void appApi.cancelMediaTool()}>
                       {copy.cancel}
                     </button>
                   </div>
@@ -1453,7 +1447,7 @@ export default function MediaToolsView() {
                 <button className="ghost-button" type="button" disabled={status === 'running'} onClick={() => void runCleanup('batch')}>
                   {copy.cleanupRunBatch}
                 </button>
-                <button className="ghost-button" type="button" disabled={status !== 'running'} onClick={() => void window.ytDlpApi.cancelMediaTool()}>
+                <button className="ghost-button" type="button" disabled={status !== 'running'} onClick={() => void appApi.cancelMediaTool()}>
                   {copy.cleanupCancel}
                 </button>
               </div>

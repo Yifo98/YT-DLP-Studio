@@ -12,7 +12,10 @@ dist
 dist-electron
 dist-ssr
 *.local
-release
+release/*
+!release/*/
+release/*/*
+!release/*/RELEASE-NOTES.md
 cookies
 tools
 YT-DLP Studio.lnk

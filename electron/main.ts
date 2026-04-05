@@ -1006,10 +1006,16 @@ function listCookieFilesRecursive(rootDir: string, currentDir = rootDir): Cookie
 }
 
 function parseProgressLine(line: string) {
-  if (!line.startsWith('PROGRESS|')) {
+  const normalizedLine = line
+    .replace(/\u001B\[[0-9;]*m/g, '')
+    .replace(/\u001B\[[0-9;]*[A-Za-z]/g, '')
+    .trim()
+  const markerIndex = normalizedLine.indexOf('PROGRESS|')
+  if (markerIndex === -1) {
     return null
   }
-  const [, percentText, downloaded, total, speed, eta] = line.split('|')
+  const payload = normalizedLine.slice(markerIndex)
+  const [, percentText, downloaded, total, speed, eta] = payload.split('|')
   const normalized = percentText.replace('%', '').trim()
   const percent = normalized ? Number.parseFloat(normalized) : null
   return {
@@ -1060,6 +1066,7 @@ function buildArgs(request: DownloadRequest, url: string) {
   const skipDownload = extraArgs.includes('--skip-download')
   const args = [
     '--no-update',
+    '--progress',
     '--newline',
     '--progress-template',
     'download:PROGRESS|%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._speed_str)s|%(progress._eta_str)s',
@@ -1468,8 +1475,9 @@ function startNextJobs() {
 
     const flushLines = (stream: 'stdout' | 'stderr') => {
       const currentBuffer = stream === 'stdout' ? stdoutBuffer : stderrBuffer
-      const lines = currentBuffer.split(/\r?\n/)
-      const remainder = lines.pop() ?? ''
+      const lines = currentBuffer.split(/[\r\n]+/)
+      const endsWithLineBreak = /[\r\n]$/.test(currentBuffer)
+      const remainder = endsWithLineBreak ? '' : lines.pop() ?? ''
 
       lines.forEach((line) => handleLine(line, stream))
 

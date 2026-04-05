@@ -251,6 +251,47 @@
   line-height: 1.55;
 }
 
+.control-room__quickbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  padding: 16px 18px;
+  margin-bottom: 20px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.control-room__stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.control-room__stat {
+  min-width: 110px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  display: grid;
+  gap: 4px;
+}
+
+.control-room__stat strong {
+  color: var(--text-strong);
+  font-size: 0.98rem;
+  line-height: 1.2;
+}
+
+.control-room__stat span {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
 .field input,
 .field select,
 .field textarea {
@@ -433,6 +474,11 @@
   margin-top: 22px;
 }
 
+.action-row--top {
+  margin-top: 0;
+  flex: 0 0 auto;
+}
+
 .primary-button,
 .ghost-button {
   display: inline-flex;
@@ -500,6 +546,28 @@
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015));
 }
 
+.telemetry-stack {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.telemetry-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.progress-shell--focus {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.progress-shell--overview {
+  margin-bottom: 0;
+}
+
 .progress-shell__header,
 .progress-meta {
   display: flex;
@@ -517,10 +585,34 @@
   font-size: 1.45rem;
 }
 
+.progress-shell__subhead,
+.progress-focus__title {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.progress-shell__subhead {
+  margin-top: 8px;
+}
+
 .progress-shell__header span,
-.progress-meta span {
+.progress-shell__subhead span,
+.progress-meta span,
+.progress-focus__title span {
   color: var(--text-muted);
   font-size: 0.84rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.progress-shell__subhead strong,
+.progress-focus__title strong {
+  color: var(--text-strong);
+  font-size: 0.96rem;
+  line-height: 1.45;
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -544,6 +636,14 @@
 .progress-bar--small {
   height: 10px;
   margin: 12px 0 10px;
+}
+
+.progress-focus__url {
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  word-break: break-all;
 }
 
 .command-box {
@@ -612,6 +712,13 @@
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.03);
   color: var(--text-muted);
+}
+
+.job-empty--compact {
+  margin-top: 12px;
+  min-height: 96px;
+  display: flex;
+  align-items: center;
 }
 
 .job-card {
@@ -1045,6 +1152,10 @@
     grid-template-columns: 1fr;
   }
 
+  .telemetry-stack {
+    grid-template-columns: 1fr;
+  }
+
   .hero__toolbar {
     flex-direction: column;
   }
@@ -1083,6 +1194,16 @@
   .field-group,
   .section-actions {
     flex-direction: column;
+  }
+
+  .control-room__quickbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .control-room__stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .field-grid--2 {

@@ -57,7 +57,9 @@ $portableAppDir = Join-Path $shareRoot "YT-DLP Studio"
 $userDataCandidates = @(
     (Join-Path $portableAppDir "user-data"),
     (Join-Path $portableAppDir "User Data"),
-    (Join-Path $portableAppDir "cookies")
+    (Join-Path $portableAppDir "cookies"),
+    (Join-Path $portableAppDir "electron-session"),
+    (Join-Path $portableAppDir "electron-user-data")
 )
 
 foreach ($candidate in $userDataCandidates) {
@@ -71,6 +73,30 @@ if (Test-Path $shareZip) {
 }
 
 Compress-Archive -Path (Join-Path $shareRoot "YT-DLP Studio") -DestinationPath $shareZip -Force
+
+$privacyPattern = 'cookie|history|config\.json|user[- ]data|electron-session|electron-user-data|subtitle-cleanup-config|api[_-]?key'
+$tempInspectDir = Join-Path $releaseDir "_inspect"
+
+if (Test-Path $tempInspectDir) {
+    Remove-Item -LiteralPath $tempInspectDir -Recurse -Force
+}
+
+Expand-Archive -LiteralPath $shareZip -DestinationPath $tempInspectDir -Force
+
+try {
+    $sensitive = Get-ChildItem -LiteralPath $tempInspectDir -Recurse -File | Where-Object {
+        $_.FullName -match $privacyPattern
+    }
+
+    if ($sensitive) {
+        throw "Sensitive files were detected inside the Windows share zip."
+    }
+}
+finally {
+    if (Test-Path $tempInspectDir) {
+        Remove-Item -LiteralPath $tempInspectDir -Recurse -Force
+    }
+}
 
 Write-Host ""
 Write-Host "Shareable package is ready:"

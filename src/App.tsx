@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
+import { appApi } from './services/appApi'
+import { readJsonStorage, removeStorageItem, writeJsonStorage } from './services/localStore'
 
 type Language = 'zh' | 'en'
 type Theme = 'midnight' | 'ember' | 'aurora'
@@ -141,6 +143,11 @@ function getText(language: Language) {
         telemetry: '实时信息',
         telemetryHint: '这里能看到总进度、单任务进度、速度和 ETA。',
         queueSummary: '任务总览',
+        queueProgress: '队列进度',
+        queueProgressHint: '总进度会把当前下载中的实时百分比也算进去，不再只看完成数。',
+        liveDownload: '当前下载中',
+        liveDownloadHint: '像 Claude 的状态面板一样，先盯住最关键的那条任务。',
+        liveDownloadIdle: '还没有正在进行的下载任务。',
         waiting: '等待中',
         pending: '待开始',
         running: '进行中',
@@ -173,7 +180,7 @@ function getText(language: Language) {
         statusDone: '完成',
         statusError: '错误',
         statusCancelled: '已取消',
-        bootstrapError: 'window.ytDlpApi 不可用，preload 没有挂上。',
+        bootstrapError: 'window.appApi 不可用，preload 没有挂上。',
         startHint: '先粘贴至少一个链接吧。',
         queuePrepared: '已准备好 {count} 个下载链接。',
         currentCommandPlaceholder: '任务启动后，这里会显示最新命令。',
@@ -235,6 +242,11 @@ function getText(language: Language) {
         telemetry: 'Telemetry',
         telemetryHint: 'See total progress, per-job progress, speed, and ETA.',
         queueSummary: 'Queue summary',
+        queueProgress: 'Queue progress',
+        queueProgressHint: 'Aggregate progress includes the live percent from the running job, not just completed items.',
+        liveDownload: 'Live download',
+        liveDownloadHint: 'Keep the most important active job in focus, similar to Claude-style telemetry.',
+        liveDownloadIdle: 'No active download job yet.',
         waiting: 'Waiting',
         pending: 'Pending',
         running: 'Running',
@@ -267,7 +279,7 @@ function getText(language: Language) {
         statusDone: 'Done',
         statusError: 'Error',
         statusCancelled: 'Cancelled',
-        bootstrapError: 'window.ytDlpApi is unavailable. Preload did not attach.',
+        bootstrapError: 'window.appApi is unavailable. Preload did not attach.',
         startHint: 'Paste at least one URL to begin.',
         queuePrepared: '{count} URL(s) queued and ready.',
         currentCommandPlaceholder: 'The latest command will appear here after a job starts.',
@@ -277,60 +289,48 @@ function getText(language: Language) {
 }
 
 function readPreferences(): StoredPreferences {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return DEFAULT_PREFS
-    const parsed = JSON.parse(raw) as Partial<StoredPreferences> & { concurrency?: number; extraArgs?: string; rememberExtraArgs?: boolean }
-    const enabledExtraPresets = Array.isArray(parsed.enabledExtraPresets)
-      ? parsed.enabledExtraPresets.filter(
-          (value): value is ExtraPresetId =>
-            [
-              'noPlaylist',
-              'embedMetadata',
-              'writeSubs',
-              'writeAutoSubs',
-              'subtitleOnly',
-              'splitAudioTrack',
-              'embedThumbnail',
-              'writeThumbnail',
-              'writeDescription',
-              'writeInfoJson',
-            ].includes(String(value)),
-        )
-      : []
-    return { ...DEFAULT_PREFS, ...parsed, enabledExtraPresets }
-  } catch {
-    return DEFAULT_PREFS
-  }
+  const parsed = readJsonStorage<Partial<StoredPreferences> & { concurrency?: number; extraArgs?: string; rememberExtraArgs?: boolean }>(STORAGE_KEY, {})
+  const enabledExtraPresets = Array.isArray(parsed.enabledExtraPresets)
+    ? parsed.enabledExtraPresets.filter(
+        (value): value is ExtraPresetId =>
+          [
+            'noPlaylist',
+            'embedMetadata',
+            'writeSubs',
+            'writeAutoSubs',
+            'subtitleOnly',
+            'splitAudioTrack',
+            'embedThumbnail',
+            'writeThumbnail',
+            'writeDescription',
+            'writeInfoJson',
+          ].includes(String(value)),
+      )
+    : []
+  return { ...DEFAULT_PREFS, ...parsed, enabledExtraPresets }
 }
 
 function readHistory(): HistoryItem[] {
-  try {
-    const raw = window.localStorage.getItem(HISTORY_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw) as Array<Partial<HistoryItem> & { url?: string }>
-    const normalized: HistoryItem[] = []
-    parsed.forEach((item, index) => {
-      const urls = Array.isArray(item.urls)
-        ? item.urls.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-        : typeof item.url === 'string' && item.url.trim().length > 0
-          ? [item.url.trim()]
-          : []
-      if (urls.length === 0) return
-      normalized.push({
-        id: typeof item.id === 'string' && item.id.trim().length > 0 ? item.id : `history-${index}`,
-        urls,
-        mode: item.mode === 'audio' ? 'audio' : 'video',
-        outputDir: typeof item.outputDir === 'string' && item.outputDir.trim().length > 0 ? item.outputDir : DEFAULT_PREFS.outputDir,
-        status: item.status === 'running' || item.status === 'success' || item.status === 'error' || item.status === 'cancelled' ? item.status : 'idle',
-        outputPath: typeof item.outputPath === 'string' ? item.outputPath : undefined,
-        finishedAt: typeof item.finishedAt === 'string' && item.finishedAt.trim().length > 0 ? item.finishedAt : new Date().toISOString(),
-      })
+  const parsed = readJsonStorage<Array<Partial<HistoryItem> & { url?: string }>>(HISTORY_KEY, [])
+  const normalized: HistoryItem[] = []
+  parsed.forEach((item, index) => {
+    const urls = Array.isArray(item.urls)
+      ? item.urls.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : typeof item.url === 'string' && item.url.trim().length > 0
+        ? [item.url.trim()]
+        : []
+    if (urls.length === 0) return
+    normalized.push({
+      id: typeof item.id === 'string' && item.id.trim().length > 0 ? item.id : `history-${index}`,
+      urls,
+      mode: item.mode === 'audio' ? 'audio' : 'video',
+      outputDir: typeof item.outputDir === 'string' && item.outputDir.trim().length > 0 ? item.outputDir : DEFAULT_PREFS.outputDir,
+      status: item.status === 'running' || item.status === 'success' || item.status === 'error' || item.status === 'cancelled' ? item.status : 'idle',
+      outputPath: typeof item.outputPath === 'string' ? item.outputPath : undefined,
+      finishedAt: typeof item.finishedAt === 'string' && item.finishedAt.trim().length > 0 ? item.finishedAt : new Date().toISOString(),
     })
-    return normalized
-  } catch {
-    return []
-  }
+  })
+  return normalized
 }
 
 function statusLabel(status: DownloadStatus, text: ReturnType<typeof getText>) {
@@ -382,6 +382,13 @@ function sortCookieFiles(items: CookieFileInfo[], language: Language) {
     const b = classifyCookieFile(right, language)
     return a.rank !== b.rank ? a.rank - b.rank : left.label.localeCompare(right.label)
   })
+}
+
+function clampPercent(value: number | null | undefined) {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return 0
+  }
+  return Math.min(100, Math.max(0, value))
 }
 
 function upsertHistoryItem(currentHistory: HistoryItem[], nextItem: HistoryItem) {
@@ -453,14 +460,14 @@ function App() {
   }, [theme])
 
   useEffect(() => {
-    if (!window.ytDlpApi) return
+    if (!appApi) return
     void (async () => {
       setRuntimeRefreshing(true)
       try {
         const [nextPaths, selfCheckPayload, cookieItems] = await Promise.all([
-          window.ytDlpApi.getPaths(),
-          window.ytDlpApi.getSelfCheck(),
-          window.ytDlpApi.listCookieFiles(),
+          appApi.getPaths(),
+          appApi.getSelfCheck(),
+          appApi.listCookieFiles(),
         ])
 
         setPaths(nextPaths)
@@ -480,9 +487,9 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!window.ytDlpApi) return
+    if (!appApi) return
 
-    const unsubscribe = window.ytDlpApi.onDownloadUpdate((event) => {
+    const unsubscribe = appApi.onDownloadUpdate((event) => {
       if (event.type === 'log') {
         const prefix = event.jobId ? `[${event.jobId}] ` : ''
         setLogs((current) => [...current, `${prefix}${event.line}`].slice(-600))
@@ -520,7 +527,7 @@ function App() {
               finishedAt: new Date().toISOString(),
             }
             const updated = upsertHistoryItem(currentHistory, item)
-            window.localStorage.setItem(HISTORY_KEY, JSON.stringify(updated))
+            writeJsonStorage(HISTORY_KEY, updated)
             return updated
           })
         }
@@ -538,7 +545,7 @@ function App() {
 
   useEffect(() => {
     const prefs: StoredPreferences = { outputDir, mode, audioFormat, audioQuality, videoPreset, language, theme, cookieFile, enabledExtraPresets }
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs))
+    writeJsonStorage(STORAGE_KEY, prefs)
   }, [audioFormat, audioQuality, cookieFile, enabledExtraPresets, language, mode, outputDir, theme, videoPreset])
 
   useEffect(() => {
@@ -560,25 +567,47 @@ function App() {
       })
   }, [linkInputs])
   const canStart = urls.length > 0 && outputDir.trim().length > 0 && queue.running === 0 && queue.pending === 0
-  const bootstrapError = !window.ytDlpApi ? text.bootstrapError : null
+  const bootstrapError = !appApi ? text.bootstrapError : null
   const effectiveStatus = bootstrapError ? 'error' : status
   const effectiveMessage = bootstrapError ?? statusMessage
-  const visibleLogs = bootstrapError ? ['[bootstrap] window.ytDlpApi is unavailable'] : logs
+  const visibleLogs = bootstrapError ? ['[bootstrap] window.appApi is unavailable'] : logs
   const denoHint = paths?.denoPath ? text.denoReady : text.denoMissing
   const sortedJobs = jobOrder.map((jobId) => jobs[jobId]).filter(Boolean)
+  const aggregateProgressPercent = useMemo(() => {
+    if (queue.total <= 0) {
+      return 0
+    }
+
+    const processedUnits = sortedJobs.reduce((totalUnits, job) => {
+      if (job.status === 'success' || job.status === 'error' || job.status === 'cancelled') {
+        return totalUnits + 100
+      }
+      if (job.status === 'running') {
+        return totalUnits + clampPercent(job.percent)
+      }
+      return totalUnits
+    }, 0)
+
+    return Math.min(100, Math.max(0, processedUnits / queue.total))
+  }, [queue.total, sortedJobs])
+  const liveJob = useMemo(
+    () => [...sortedJobs].reverse().find((job) => job.status === 'running') ?? null,
+    [sortedJobs],
+  )
+  const aggregateProgressLabel = queue.total > 0 ? `${aggregateProgressPercent.toFixed(1)}%` : text.waiting
   const combinedExtraArgs = mergeExtraArgs(enabledExtraPresets)
   const selectedCookieMeta = cookieFile ? cookieFiles.find((item) => item.path === cookieFile) : null
   const canClearLinks = linkInputs.some((item) => item.trim().length > 0) || linkInputs.length > 1
 
   async function refreshRuntimeState() {
-    if (!window.ytDlpApi) return
+    if (!appApi) return
 
     setRuntimeRefreshing(true)
     try {
       const [nextPaths, selfCheckPayload, cookieItems] = await Promise.all([
-        window.ytDlpApi.getPaths(),
-        window.ytDlpApi.getSelfCheck(),
-        window.ytDlpApi.listCookieFiles(),
+        appApi.getPaths(),
+        appApi.getSelfCheck(),
+        appApi.listCookieFiles(),
       ])
 
       setPaths(nextPaths)
@@ -604,7 +633,7 @@ function App() {
   }
 
   async function handlePickFolder() {
-    const folder = await window.ytDlpApi.pickDirectory(outputDir)
+    const folder = await appApi.pickDirectory(outputDir)
     if (folder) setOutputDir(folder)
   }
 
@@ -621,7 +650,7 @@ function App() {
     setStatus('running')
     setStatusMessage(text.queuePrepared.replace('{count}', String(urls.length)))
     try {
-      await window.ytDlpApi.startDownload({
+      await appApi.startDownload({
         urls,
         outputDir,
         mode,
@@ -689,14 +718,14 @@ function App() {
       theme,
       enabledExtraPresets,
     }
-    const savedPath = await window.ytDlpApi.exportConfig(config)
+    const savedPath = await appApi.exportConfig(config)
     if (savedPath) {
       setStatusMessage(`Config exported: ${savedPath}`)
     }
   }
 
   async function handleImportConfig() {
-    const imported = await window.ytDlpApi.importConfig()
+    const imported = await appApi.importConfig()
     if (!imported || typeof imported !== 'object') return
     const data = imported as Partial<StoredPreferences>
     if (typeof data.outputDir === 'string') setOutputDir(data.outputDir)
@@ -750,7 +779,7 @@ function App() {
             <div className="toolbar-block">
               <span>{language === 'zh' ? '后处理' : 'Post tools'}</span>
               <div className="segmented">
-                <button className="segmented__item" type="button" onClick={() => void window.ytDlpApi.openMediaTools()}>
+                <button className="segmented__item" type="button" onClick={() => void appApi.openMediaTools()}>
                   {language === 'zh' ? '媒体工具' : 'Media tools'}
                 </button>
               </div>
@@ -783,7 +812,7 @@ function App() {
             <p>{denoHint}</p>
             {!paths?.denoPath ? (
               <div className="status-card__actions">
-                <button className="ghost-button ghost-button--small" type="button" onClick={() => void window.ytDlpApi.openExternal(denoInstallUrl)}>
+                <button className="ghost-button ghost-button--small" type="button" onClick={() => void appApi.openExternal(denoInstallUrl)}>
                   {denoInstallButton}
                 </button>
                 <small>{denoInstallHint}</small>
@@ -813,6 +842,18 @@ function App() {
       <main className="workspace">
         <section className="panel control-room">
           <div className="section-title"><span>{text.downloadPanel}</span><small>{text.downloadPanelHint}</small></div>
+          <div className="control-room__quickbar">
+            <div className="control-room__stats">
+              <div className="control-room__stat"><strong>{urls.length}</strong><span>{text.urls}</span></div>
+              <div className="control-room__stat"><strong>{mode === 'video' ? text.video : text.audio}</strong><span>{text.mode}</span></div>
+              <div className="control-room__stat"><strong>{queue.running > 0 || queue.pending > 0 ? statusLabel('running', text) : statusLabel(effectiveStatus, text)}</strong><span>{text.status}</span></div>
+            </div>
+            <div className="action-row action-row--top">
+              <button className="primary-button" type="button" disabled={!canStart} onClick={handleStartDownload}>{text.start}</button>
+              <button className="ghost-button" type="button" disabled={queue.running === 0 && queue.pending === 0} onClick={() => void appApi.cancelDownload()}>{text.cancel}</button>
+              <button className="ghost-button" type="button" onClick={() => void appApi.openPath(outputDir)}>{text.openFolder}</button>
+            </div>
+          </div>
           <div className="field">
             <span>{text.urls}</span>
             <div className="link-list">
@@ -906,8 +947,8 @@ function App() {
             <label className="field field--button">
               <span>Cookies</span>
               <div className="cookie-helper-actions">
-                <button className="ghost-button ghost-button--full" type="button" onClick={() => void window.ytDlpApi.openPath(paths?.cookiesDir ?? '')}>{text.openCookiesDir}</button>
-                <button className="ghost-button ghost-button--full" type="button" onClick={() => void window.ytDlpApi.openExternal(cookiesPluginUrl)}>{cookiesPluginButton}</button>
+                <button className="ghost-button ghost-button--full" type="button" onClick={() => void appApi.openPath(paths?.cookiesDir ?? '')}>{text.openCookiesDir}</button>
+                <button className="ghost-button ghost-button--full" type="button" onClick={() => void appApi.openExternal(cookiesPluginUrl)}>{cookiesPluginButton}</button>
               </div>
               <small className="field-help">{cookiesPluginLabel}</small>
               <small className="field-help">{cookiesPluginHint}</small>
@@ -926,18 +967,29 @@ function App() {
             <small className="field-help">{extraOptionsHint}</small>
           </div>
           <div className="command-box"><span>{extraOptionsLabel}</span><code>{combinedExtraArgs || text.waiting}</code></div>
-          <div className="action-row">
-            <button className="primary-button" type="button" disabled={!canStart} onClick={handleStartDownload}>{text.start}</button>
-            <button className="ghost-button" type="button" disabled={queue.running === 0 && queue.pending === 0} onClick={() => void window.ytDlpApi.cancelDownload()}>{text.cancel}</button>
-            <button className="ghost-button" type="button" onClick={() => void window.ytDlpApi.openPath(outputDir)}>{text.openFolder}</button>
-          </div>
         </section>
         <section className="panel telemetry">
           <div className="section-title"><span>{text.telemetry}</span><small>{text.telemetryHint}</small></div>
-          <div className="progress-shell">
-            <div className="progress-shell__header"><strong>{queue.total > 0 ? `${queue.completed}/${queue.total}` : text.waiting}</strong><span>{text.queueSummary}</span></div>
-            <div className="progress-bar"><div className="progress-bar__fill" style={{ width: `${queue.total > 0 ? Math.max((queue.completed / queue.total) * 100, 4) : 4}%` }} /></div>
-            <div className="progress-meta progress-meta--wrap"><span>{text.pending}: {queue.pending}</span><span>{text.running}: {queue.running}</span><span>{text.done}: {queue.completed}</span><span>{text.failed}: {queue.failed}</span><span>{text.cancelled}: {queue.cancelled}</span></div>
+          <div className="telemetry-stack">
+            <div className="progress-shell progress-shell--overview">
+              <div className="progress-shell__header"><strong>{aggregateProgressLabel}</strong><span>{text.queueProgress}</span></div>
+              <div className="progress-shell__subhead"><span>{text.queueProgressHint}</span><strong>{queue.total > 0 ? `${queue.completed}/${queue.total}` : text.queueSummary}</strong></div>
+              <div className="progress-bar"><div className="progress-bar__fill" style={{ width: `${queue.total > 0 ? Math.max(aggregateProgressPercent, 4) : 4}%` }} /></div>
+              <div className="progress-meta progress-meta--wrap"><span>{text.pending}: {queue.pending}</span><span>{text.running}: {queue.running}</span><span>{text.done}: {queue.completed}</span><span>{text.failed}: {queue.failed}</span><span>{text.cancelled}: {queue.cancelled}</span></div>
+            </div>
+            <div className="progress-shell progress-shell--focus">
+              <div className="progress-shell__header"><strong>{text.liveDownload}</strong><span>{text.liveDownloadHint}</span></div>
+              {liveJob ? (
+                <>
+                  <div className="progress-focus__title"><strong>{liveJob.title}</strong><span>{statusLabel(liveJob.status, text)}</span></div>
+                  <p className="progress-focus__url">{liveJob.url}</p>
+                  <div className="progress-bar progress-bar--small"><div className="progress-bar__fill" style={{ width: `${Math.max(clampPercent(liveJob.percent), 6)}%` }} /></div>
+                  <div className="progress-meta progress-meta--wrap"><span>{liveJob.percent !== null ? `${liveJob.percent.toFixed(1)}%` : text.waiting}</span><span>{text.downloaded}: {liveJob.downloaded}</span><span>{text.total}: {liveJob.total}</span><span>{text.eta}: {liveJob.eta}</span><span>{liveJob.speed}</span></div>
+                </>
+              ) : (
+                <div className="job-empty job-empty--compact">{text.liveDownloadIdle}</div>
+              )}
+            </div>
           </div>
           <div className="job-grid">
             <div className="section-title section-title--tight"><span>{text.activeJobs}</span><small>{text.activeJobsHint}</small></div>
@@ -947,19 +999,21 @@ function App() {
                 <p className="job-card__url">{job.url}</p>
                 <div className="progress-bar progress-bar--small"><div className="progress-bar__fill" style={{ width: `${Math.max(job.percent ?? 4, 4)}%` }} /></div>
                 <div className="progress-meta progress-meta--wrap"><span>{job.percent !== null ? `${job.percent.toFixed(1)}%` : text.waiting}</span><span>{text.downloaded}: {job.downloaded}</span><span>{text.total}: {job.total}</span><span>{text.eta}: {job.eta}</span><span>{job.speed}</span></div>
-                {job.outputPath ? <button className="ghost-button ghost-button--full" type="button" onClick={() => void window.ytDlpApi.showItemInFolder(job.outputPath ?? '')}>{text.openFile}</button> : null}
+                {job.outputPath ? <button className="ghost-button ghost-button--full" type="button" onClick={() => void appApi.showItemInFolder(job.outputPath ?? '')}>{text.openFile}</button> : null}
               </div>
             ))}
           </div>
-          <div className="command-box"><span>{text.currentCommand}</span><code>{activeCommand || text.currentCommandPlaceholder}</code></div>
-          <div className="command-box"><span>{text.ffmpegPath}</span><code>{paths?.ffmpegPath ?? text.loading}</code></div>
+          <div className="telemetry-meta-grid">
+            <div className="command-box"><span>{text.currentCommand}</span><code>{activeCommand || text.currentCommandPlaceholder}</code></div>
+            <div className="command-box"><span>{text.ffmpegPath}</span><code>{paths?.ffmpegPath ?? text.loading}</code></div>
+          </div>
         </section>
         <section className="panel logs">
           <div className="section-title"><span>{text.logs}</span><small>{text.logsHint}</small></div>
           <div className="log-viewer" ref={logViewerRef}>{visibleLogs.length === 0 ? <div className="log-placeholder">{text.noLogs}</div> : visibleLogs.map((line, index) => <div className="log-line" key={`${line}-${index}`}>{line}</div>)}</div>
         </section>
         <section className="panel history">
-          <div className="section-title"><span>{text.recentJobs}</span><div className="section-actions"><small>{text.recentJobsHint}</small><button className="ghost-button ghost-button--small" type="button" onClick={() => { setHistory([]); window.localStorage.removeItem(HISTORY_KEY) }}>{text.clearHistory}</button></div></div>
+          <div className="section-title"><span>{text.recentJobs}</span><div className="section-actions"><small>{text.recentJobsHint}</small><button className="ghost-button ghost-button--small" type="button" onClick={() => { setHistory([]); removeStorageItem(HISTORY_KEY) }}>{text.clearHistory}</button></div></div>
           <div className="history-list">
             {history.length === 0 ? <div className="history-empty">{text.noHistory}</div> : history.map((item) => (
               <button className="history-item" key={item.id} type="button" onClick={() => { setLinkInputs(Array.isArray(item.urls) && item.urls.length > 0 ? item.urls : ['']); setOutputDir(item.outputDir); setMode(item.mode); setStatusMessage(text.copiedFromHistory) }}>

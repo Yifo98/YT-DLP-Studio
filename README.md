@@ -36,6 +36,14 @@ brew install yt-dlp ffmpeg deno
 
 如果你更习惯 Conda，也可以把这些工具放进同一个环境里，应用会自动尝试从该环境的 `bin/` 目录读取。
 
+### 本地开发启动器
+
+仓库根目录已经保留了一个 macOS 启动器：
+
+- `Launch YT-DLP Studio.command`
+
+它会调用 `scripts/launch-mac.sh`，优先复用现有 Conda 环境；如果本机没有这个环境，就自动回退到应用内置工具或系统 `PATH` 做本地核验。
+
 ## Windows 使用说明
 
 Windows 现在同时提供两种成品：
@@ -122,6 +130,14 @@ For local development or a UI-only build on macOS, the recommended setup is:
 ```bash
 brew install yt-dlp ffmpeg deno
 ```
+
+### Local macOS Launcher
+
+The repository root already includes a macOS launcher:
+
+- `Launch YT-DLP Studio.command`
+
+It calls `scripts/launch-mac.sh`, prefers an existing Conda environment when available, and otherwise falls back to bundled tools or your system `PATH` for local verification.
 
 ## Windows Notes
 

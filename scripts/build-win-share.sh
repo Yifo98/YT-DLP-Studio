@@ -9,19 +9,63 @@ TOOLS_DIR="$PROJECT_ROOT/tools"
 TOOLS_BIN_DIR="$TOOLS_DIR/bin"
 TOOLS_LIB_DIR="$TOOLS_DIR/lib"
 TMP_DIR="$(mktemp -d)"
+APP_VERSION="$(node -p "require('$PROJECT_ROOT/package.json').version")"
+VERSION_DIR="$RELEASE_DIR/$APP_VERSION"
 YTDLP_VERSION="${YTDLP_VERSION:-2025.12.08}"
 DENO_VERSION="${DENO_VERSION:-2.7.5}"
 YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp.exe"
 DENO_URL="https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-x86_64-pc-windows-msvc.zip"
 FFMPEG_URL="${FFMPEG_URL:-https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip}"
+ZIP_PRIVACY_PATTERN='cookie|history|config\.json|user[- ]data|electron-session|electron-user-data|subtitle-cleanup-config|api[_-]?key'
 
 cleanup() {
   rm -rf "$TMP_DIR" "$TOOLS_BIN_DIR" "$TOOLS_LIB_DIR"
 }
 
+prepare_release_dir() {
+  mkdir -p "$RELEASE_DIR" "$VERSION_DIR"
+  rm -rf "$RELEASE_DIR"/win-unpacked
+  rm -f "$RELEASE_DIR"/.DS_Store(N) "$VERSION_DIR"/.DS_Store(N)
+  rm -f "$RELEASE_DIR"/*win*.zip(N) "$RELEASE_DIR"/*.exe(N) "$RELEASE_DIR"/*win*.zip.blockmap(N) "$RELEASE_DIR"/builder-debug.yml(N)
+  rm -f "$VERSION_DIR"/*win*.zip(N) "$VERSION_DIR"/*.exe(N)
+}
+
+write_release_notes() {
+  cat > "$VERSION_DIR/RELEASE-NOTES.md" <<EOF
+# YT-DLP Studio $APP_VERSION
+
+## Summary
+
+This release refreshes the shared desktop package with the latest download flow and telemetry improvements.
+
+## Included artifacts
+
+- \`YT-DLP Studio-$APP_VERSION-arm64-mac.zip\`
+- \`YT-DLP Studio-$APP_VERSION-win.zip\`
+- \`YT-DLP Studio $APP_VERSION.exe\`
+- \`README-mac.txt\`
+
+## Highlights
+
+- Fixed real-time download progress so active jobs now report incremental progress instead of jumping straight to 100 percent
+- Reworked the download panel so the main action buttons are easier to reach
+- Split telemetry into clearer sections for queue overview and active download focus
+- Kept bundled \`yt-dlp\` \`ffmpeg\` \`ffprobe\` and \`deno\` inside the standard shared builds
+- Refined runtime refresh cookies guidance and local media tool integration
+
+## Packaging and privacy
+
+- Shared builds are intended to be unpack-and-run
+- Packaging scripts now clear old platform artifacts before building new ones
+- Packaging scripts verify that cookies history user-data session files subtitle cleanup configs API keys and similar private files are not included in release archives
+- macOS and Windows builds are currently unsigned so first-run security prompts are expected
+EOF
+}
+
 trap cleanup EXIT
 
-mkdir -p "$RELEASE_DIR" "$TOOLS_BIN_DIR" "$TOOLS_LIB_DIR"
+prepare_release_dir
+mkdir -p "$TOOLS_BIN_DIR" "$TOOLS_LIB_DIR"
 rm -rf "$TOOLS_BIN_DIR" "$TOOLS_LIB_DIR"
 mkdir -p "$TOOLS_BIN_DIR" "$TOOLS_LIB_DIR"
 
@@ -56,10 +100,16 @@ if [[ -z "$WIN_ZIP" || -z "$WIN_PORTABLE_EXE" ]]; then
   exit 1
 fi
 
-if unzip -l "$WIN_ZIP" | grep -Eiq 'cookie|subtitle-cleanup-config|user data'; then
+if unzip -l "$WIN_ZIP" | grep -Eiq "$ZIP_PRIVACY_PATTERN"; then
   echo "Sensitive files were detected inside the Windows zip artifact."
   exit 1
 fi
+
+cp "$WIN_ZIP" "$VERSION_DIR/"
+cp "$WIN_PORTABLE_EXE" "$VERSION_DIR/"
+rm -rf "$RELEASE_DIR"/win-unpacked
+rm -f "$RELEASE_DIR"/builder-debug.yml(N)
+write_release_notes
 
 echo "Windows portable artifact:"
 echo "$WIN_PORTABLE_EXE"
