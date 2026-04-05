@@ -1,11 +1,12 @@
-# YT-DLP Studio 1.0.1
+# YT-DLP Studio 2.0.0
 
 ## 可直接复制的发布文案
 
 ```text
-YT-DLP Studio 1.0.1
+YT-DLP Studio 2.0.0
 
-这次更新把 macOS 和 Windows 的分享包都补成了更完整的“解压即用”版本。
+这次更新已经不再算 1.0.x 级别的小修小补，而是正式升级到 2.0.0。
+macOS 和 Windows 的分享包都补成了更完整的“解压即用”版本。
 
 更新内容：
 - macOS 压缩包现已内置 yt-dlp、ffmpeg、ffprobe、deno，其他 Mac 电脑解压后即可运行
@@ -52,3 +53,9 @@ YT-DLP Studio 1.0.1
 - 改为 tab 式功能切换
 - 补充批量进度、当前文件、状态摘要
 - 当识别不到字幕流时，提示使用 Subtitle Edit
+
+## 版本升级规则
+
+- 小改动或修复 bug：升级 `patch`
+- 功能增强但不改产品主形态：升级 `minor`
+- 桌面架构、交互层级或打包形态发生明显代际变化：升级 `major`

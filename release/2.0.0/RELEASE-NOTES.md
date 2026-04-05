@@ -1,4 +1,4 @@
-# YT-DLP Studio 1.0.1
+# YT-DLP Studio 2.0.0
 
 ## 中文说明
 
@@ -6,9 +6,9 @@
 
 ## 包含内容
 
-- `YT-DLP Studio-1.0.1-arm64-mac.zip`
-- `YT-DLP Studio-1.0.1-win.zip`
-- `YT-DLP Studio 1.0.1.exe`
+- `YT-DLP Studio-2.0.0-arm64-mac.zip`
+- `YT-DLP Studio-2.0.0-win.zip`
+- `YT-DLP Studio 2.0.0.exe`
 - `README-mac.txt`
 
 ## 主要更新
@@ -34,9 +34,9 @@ This release refreshes the shared desktop package with the latest download flow,
 
 ## Included artifacts
 
-- `YT-DLP Studio-1.0.1-arm64-mac.zip`
-- `YT-DLP Studio-1.0.1-win.zip`
-- `YT-DLP Studio 1.0.1.exe`
+- `YT-DLP Studio-2.0.0-arm64-mac.zip`
+- `YT-DLP Studio-2.0.0-win.zip`
+- `YT-DLP Studio 2.0.0.exe`
 - `README-mac.txt`
 
 ## Highlights

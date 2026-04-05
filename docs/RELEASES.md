@@ -9,12 +9,12 @@
 
 ## 当前推荐资产
 
-- `YT-DLP Studio-1.0.1-win.zip`
+- `YT-DLP Studio-2.0.0-win.zip`
   说明：Windows 推荐下载，解压后运行 `YT-DLP Studio.exe`
 - macOS 资产
   说明：可发布 `dmg` / `zip`，未内置工具时建议同时注明依赖系统环境
 
-## 1.0.1 更新摘要
+## 2.0.0 更新摘要
 
 - macOS 支持升级为真正的“解压即用”，应用内已内置 `yt-dlp`、`ffmpeg`、`ffprobe`、`deno`
 - 新增 Windows 便携版与 zip 分享包，支持在其他 Windows 电脑上解压或双击即用
@@ -22,6 +22,18 @@
 - 本地媒体工具台新增字幕整理能力，支持 OpenAI-compatible 接口、模型拉取、连接测试、批量清洗和停止任务
 - 桌面控制台与媒体工具台补齐环境刷新、批量进度、链接去重/清空、4K 画质上限和界面排版优化
 - 新增根目录单一启动器，移除 `daily-use` 里的重复启动脚本
+
+## 版本规则
+
+- `patch`：小修复，例如 `1.0.1 -> 1.0.2`
+- `minor`：新增功能但不改变产品主形态，例如 `1.0.1 -> 1.1.0`
+- `major`：桌面架构、主交互、打包形态发生明显代际变化，例如 `1.0.1 -> 2.0.0`
+
+版本号唯一来源是 `package.json`。当前打包脚本会自动使用这个版本号来生成：
+
+- 发布包文件名
+- `release/<version>/` 目录
+- 版本发布说明
 
 ## 推荐发布文案
 
@@ -64,10 +76,10 @@ Windows 首次运行时，可能会看到系统安全提示。
 
 ## 资产命名建议
 
-- `YT-DLP Studio-1.0.1-win.zip`
-- `YT-DLP Studio 1.0.1.exe`
-- `YT-DLP Studio-1.0.1-arm64-mac.zip`
-- `YT-DLP Studio-1.0.1.dmg`
+- `YT-DLP Studio-2.0.0-win.zip`
+- `YT-DLP Studio 2.0.0.exe`
+- `YT-DLP Studio-2.0.0-arm64-mac.zip`
+- `YT-DLP Studio-2.0.0.dmg`
 
 ## English
 
@@ -78,7 +90,7 @@ Windows 首次运行时，可能会看到系统安全提示。
 
 ## Recommended Asset
 
-- `YT-DLP-Studio-win-x64.zip`
+- `YT-DLP Studio-2.0.0-win.zip`
   Notes: recommended Windows build, unzip and run `YT-DLP Studio.exe`
 - macOS assets
   Notes: `dmg` / `zip` builds are supported; mention system-tool fallback when tools are not bundled
@@ -121,3 +133,11 @@ The current Windows release is not code-signed yet, so SmartScreen may warn user
 Recommended wording:
 
 > If Windows shows a security warning on first launch, click "More info" and then "Run anyway" to continue.
+
+## Versioning Rules
+
+- `patch`: small fixes such as `1.0.1 -> 1.0.2`
+- `minor`: additive feature releases that do not change the product shape
+- `major`: large desktop architecture, packaging, or interaction upgrades such as `1.0.1 -> 2.0.0`
+
+`package.json` is the single source of truth. The packaging scripts derive release asset names, version folders, and generated release notes from that version automatically.

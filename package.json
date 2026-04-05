@@ -1,12 +1,15 @@
 {
   "name": "yt-dlp-studio",
   "private": true,
-  "version": "1.0.1",
+  "version": "2.0.0",
   "type": "module",
   "main": "dist-electron/main.js",
   "description": "A polished Electron front-end for yt-dlp using the shared conda environment.",
   "author": "Dyifo",
   "scripts": {
+    "version:patch": "npm version patch --no-git-tag-version",
+    "version:minor": "npm version minor --no-git-tag-version",
+    "version:major": "npm version major --no-git-tag-version",
     "dev:web": "vite",
     "dev:electron": "node scripts/dev-electron.mjs",
     "dev": "concurrently -k \"npm:dev:web\" \"npm:dev:electron\"",
