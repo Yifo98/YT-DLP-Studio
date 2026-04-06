@@ -3,8 +3,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, parse, relative } from 'node:path'
-import { StringDecoder } from 'node:string_decoder'
 import { fileURLToPath } from 'node:url'
+import { TextDecoder } from 'node:util'
 
 type DownloadMode = 'video' | 'audio'
 type AudioFormat = 'mp3' | 'm4a' | 'wav' | 'opus'
@@ -134,18 +134,21 @@ type JobContext = {
 }
 
 const isWindows = process.platform === 'win32'
+const windowsHomeDir = process.env.USERPROFILE ?? homedir()
+const windowsLocalAppDataDir = process.env.LOCALAPPDATA ?? join(windowsHomeDir, 'AppData', 'Local')
+const windowsProgramFilesDir = process.env.ProgramFiles ?? 'C:\\Program Files'
 const envRoot = process.env.YTDLP_ENV_ROOT
   ?? (
     isWindows
-      ? 'C:\\Users\\84027\\.conda\\envs\\yt-dlp'
+      ? join(windowsHomeDir, '.conda', 'envs', 'yt-dlp')
       : join(homedir(), '.conda', 'envs', 'yt-dlp')
   )
 const denoCandidates = [
   process.env.DENO_BIN,
   ...(isWindows
     ? [
-        'C:\\Users\\84027\\AppData\\Local\\Microsoft\\WinGet\\Packages\\DenoLand.Deno_Microsoft.Winget.Source_8wekyb3d8bbwe\\deno.exe',
-        'C:\\Program Files\\Deno\\bin\\deno.exe',
+        join(windowsLocalAppDataDir, 'Microsoft', 'WinGet', 'Packages', 'DenoLand.Deno_Microsoft.Winget.Source_8wekyb3d8bbwe', 'deno.exe'),
+        join(windowsProgramFilesDir, 'Deno', 'bin', 'deno.exe'),
       ]
     : [
         join(homedir(), '.deno', 'bin', 'deno'),
@@ -359,9 +362,37 @@ function buildDyldLibraryPathEnv() {
   ]).join(delimiter)
 }
 
+function createStreamDecoder() {
+  const encoding = isWindows ? 'gb18030' : 'utf-8'
+
+  try {
+    const decoder = new TextDecoder(encoding, { fatal: false })
+    return {
+      write(chunk: Uint8Array) {
+        return decoder.decode(chunk, { stream: true })
+      },
+      end() {
+        return decoder.decode()
+      },
+    }
+  } catch {
+    const decoder = new TextDecoder('utf-8', { fatal: false })
+    return {
+      write(chunk: Uint8Array) {
+        return decoder.decode(chunk, { stream: true })
+      },
+      end() {
+        return decoder.decode()
+      },
+    }
+  }
+}
+
 function getCookiesDir() {
   const targetDir = app.isPackaged
-    ? join(app.getPath('userData'), 'cookie-files')
+    ? isWindows
+      ? join(getPortableRootDir(), 'cookies')
+      : join(app.getPath('userData'), 'cookie-files')
     : join(getDevRootDir(), 'cookies')
 
   return ensureDirectory(targetDir)
@@ -1216,8 +1247,8 @@ async function runLoggedProcess(executable: string, args: string[], cwd: string)
     })
 
     activeMediaProcess = child
-    const stdoutDecoder = new StringDecoder('utf8')
-    const stderrDecoder = new StringDecoder('utf8')
+    const stdoutDecoder = createStreamDecoder()
+    const stderrDecoder = createStreamDecoder()
     let stdoutBuffer = ''
     let stderrBuffer = ''
 
@@ -1408,8 +1439,8 @@ function startNextJobs() {
       },
     })
 
-    const stdoutDecoder = new StringDecoder('utf8')
-    const stderrDecoder = new StringDecoder('utf8')
+    const stdoutDecoder = createStreamDecoder()
+    const stderrDecoder = createStreamDecoder()
 
     const context: JobContext = {
       request: activeBatchRequest,

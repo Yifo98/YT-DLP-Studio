@@ -50,6 +50,8 @@ write_release_notes() {
 - 修复实时下载进度，让进行中的任务不再直接跳到 100%
 - 重做下载面板布局，让高频操作按钮更容易够到
 - 将实时信息拆成更清晰的队列总览和当前任务聚焦区域
+- 修复 Windows 下载标题乱码，任务名称会按本地编码正常显示
+- 修复 Windows 便携版 cookies 目录，改为程序目录下的 \`cookies/\`
 - 标准分享包继续内置 \`yt-dlp\` \`ffmpeg\` \`ffprobe\` 和 \`deno\`
 - 优化运行时刷新、cookies 指引与本地媒体工具整合体验
 
@@ -78,6 +80,8 @@ This release refreshes the shared desktop package with the latest download flow,
 - Fixed real-time download progress so active jobs no longer jump straight to 100 percent
 - Reworked the download panel so the primary actions are easier to reach
 - Split telemetry into clearer queue overview and active download focus sections
+- Fixed mojibake in Windows download titles by decoding yt-dlp output with the local code page
+- Moved the Windows portable cookies folder into the app directory as \`cookies/\`
 - Kept bundled \`yt-dlp\`, \`ffmpeg\`, \`ffprobe\`, and \`deno\` inside the standard shared builds
 - Refined runtime refresh, cookies guidance, and local media tool integration
 

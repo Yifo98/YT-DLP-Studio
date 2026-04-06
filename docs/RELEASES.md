@@ -9,12 +9,12 @@
 
 ## 当前推荐资产
 
-- `YT-DLP Studio-2.0.0-win.zip`
+- `YT-DLP Studio-2.0.1-win.zip`
   说明：Windows 推荐下载，解压后运行 `YT-DLP Studio.exe`
 - macOS 资产
   说明：可发布 `dmg` / `zip`，未内置工具时建议同时注明依赖系统环境
 
-## 2.0.0 更新摘要
+## 2.0.1 更新摘要
 
 - macOS 支持升级为真正的“解压即用”，应用内已内置 `yt-dlp`、`ffmpeg`、`ffprobe`、`deno`
 - 新增 Windows 便携版与 zip 分享包，支持在其他 Windows 电脑上解压或双击即用
@@ -22,6 +22,8 @@
 - 本地媒体工具台新增字幕整理能力，支持 OpenAI-compatible 接口、模型拉取、连接测试、批量清洗和停止任务
 - 桌面控制台与媒体工具台补齐环境刷新、批量进度、链接去重/清空、4K 画质上限和界面排版优化
 - 新增根目录单一启动器，移除 `daily-use` 里的重复启动脚本
+- 修复 Windows 下载标题乱码，下载任务与实时信息会按本地编码正常显示
+- 修复 Windows 便携版 cookies 目录，改为程序目录下的 `cookies/`
 
 ## 版本规则
 
@@ -76,10 +78,10 @@ Windows 首次运行时，可能会看到系统安全提示。
 
 ## 资产命名建议
 
-- `YT-DLP Studio-2.0.0-win.zip`
-- `YT-DLP Studio 2.0.0.exe`
-- `YT-DLP Studio-2.0.0-arm64-mac.zip`
-- `YT-DLP Studio-2.0.0.dmg`
+- `YT-DLP Studio-2.0.1-win.zip`
+- `YT-DLP Studio 2.0.1.exe`
+- `YT-DLP Studio-2.0.1-arm64-mac.zip`
+- `YT-DLP Studio-2.0.1.dmg`
 
 ## English
 
@@ -90,7 +92,7 @@ Windows 首次运行时，可能会看到系统安全提示。
 
 ## Recommended Asset
 
-- `YT-DLP Studio-2.0.0-win.zip`
+- `YT-DLP Studio-2.0.1-win.zip`
   Notes: recommended Windows build, unzip and run `YT-DLP Studio.exe`
 - macOS assets
   Notes: `dmg` / `zip` builds are supported; mention system-tool fallback when tools are not bundled
