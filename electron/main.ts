@@ -147,6 +147,7 @@ const denoCandidates = [
   process.env.DENO_BIN,
   ...(isWindows
     ? [
+        join(windowsHomeDir, '.deno', 'bin', 'deno.exe'),
         join(windowsLocalAppDataDir, 'Microsoft', 'WinGet', 'Packages', 'DenoLand.Deno_Microsoft.Winget.Source_8wekyb3d8bbwe', 'deno.exe'),
         join(windowsProgramFilesDir, 'Deno', 'bin', 'deno.exe'),
       ]
@@ -1004,6 +1005,10 @@ function getHostWindow(webContentsId?: Electron.WebContents) {
 }
 
 function getDenoPath() {
+  if (isWindows) {
+    return resolveExecutablePath('deno') ?? denoCandidates.find((candidate) => existsSync(candidate)) ?? null
+  }
+
   const existing = denoCandidates.find((candidate) => existsSync(candidate))
   return existing ?? null
 }
