@@ -1,7 +1,7 @@
 param(
-    [string]$ProjectRoot = "I:\yt-dlp",
-    [string]$EnvScriptsDir = "C:\Users\84027\.conda\envs\yt-dlp\Scripts",
-    [string]$YtDlpStandaloneUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+    [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
+    [string]$EnvScriptsDir = "",
+    [string]$YtDlpStandaloneUrl = "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp.exe"
 )
 
 Set-StrictMode -Version Latest
@@ -17,6 +17,11 @@ $requiredFiles = @(
     "ffprobe.exe"
 )
 
+if (-not $EnvScriptsDir) {
+    $envRoot = if ($env:YTDLP_ENV_ROOT) { $env:YTDLP_ENV_ROOT } else { Join-Path $HOME ".conda\envs\yt-dlp" }
+    $EnvScriptsDir = Join-Path $envRoot "Scripts"
+}
+
 New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
 
 foreach ($fileName in $requiredFiles) {
@@ -29,7 +34,7 @@ foreach ($fileName in $requiredFiles) {
 }
 
 $ytDlpDestination = Join-Path $toolsDir "yt-dlp.exe"
-Write-Host "Downloading standalone yt-dlp.exe from official release..."
+Write-Host "Downloading standalone yt-dlp.exe..."
 Invoke-WebRequest -Uri $YtDlpStandaloneUrl -OutFile $ytDlpDestination
 
 Push-Location $ProjectRoot

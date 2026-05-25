@@ -1041,10 +1041,14 @@ function listCookieFilesRecursive(rootDir: string, currentDir = rootDir): Cookie
   return result.sort((left, right) => left.label.localeCompare(right.label))
 }
 
+const ansiEscape = String.fromCharCode(27)
+const ansiColorPattern = new RegExp(`${ansiEscape}\\[[0-9;]*m`, 'g')
+const ansiControlPattern = new RegExp(`${ansiEscape}\\[[0-9;]*[A-Za-z]`, 'g')
+
 function parseProgressLine(line: string) {
   const normalizedLine = line
-    .replace(/\u001B\[[0-9;]*m/g, '')
-    .replace(/\u001B\[[0-9;]*[A-Za-z]/g, '')
+    .replace(ansiColorPattern, '')
+    .replace(ansiControlPattern, '')
     .trim()
   const markerIndex = normalizedLine.indexOf('PROGRESS|')
   if (markerIndex === -1) {
@@ -1066,6 +1070,10 @@ function parseProgressLine(line: string) {
 function tokenizeExtraArgs(value: string) {
   const tokens = value.match(/"[^"]*"|'[^']*'|\S+/g) ?? []
   return tokens.map((token) => token.replace(/^['"]|['"]$/g, ''))
+}
+
+function hasExtraArg(args: string[], option: string) {
+  return args.some((arg) => arg === option || arg.startsWith(`${option}=`))
 }
 
 function videoPresetToFormat(value: VideoPreset) {
@@ -1098,6 +1106,7 @@ function audioQualityToValue(value: AudioQuality) {
 
 function buildArgs(request: DownloadRequest, url: string) {
   const ffmpegPath = getFfmpegPath()
+  const denoPath = getDenoPath()
   const extraArgs = tokenizeExtraArgs(request.extraArgs.trim())
   const skipDownload = extraArgs.includes('--skip-download')
   const args = [
@@ -1115,6 +1124,10 @@ function buildArgs(request: DownloadRequest, url: string) {
     '-o',
     join(request.outputDir, '%(title)s [%(id)s].%(ext)s'),
   ]
+
+  if (denoPath && !hasExtraArg(extraArgs, '--js-runtimes')) {
+    args.push('--js-runtimes', `deno:${denoPath}`)
+  }
 
   if (!skipDownload && request.mode === 'audio') {
     args.push(

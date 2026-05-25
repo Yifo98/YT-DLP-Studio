@@ -18,6 +18,7 @@ release/*/*
 !release/*/RELEASE-NOTES.md
 cookies
 tools
+.codex-tmp/
 YT-DLP Studio.lnk
 
 # Editor directories and files

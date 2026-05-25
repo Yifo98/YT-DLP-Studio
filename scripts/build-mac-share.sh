@@ -14,7 +14,8 @@ README_PATH="$VERSION_DIR/README-mac.txt"
 DEFAULT_ENV_ROOT="$HOME/.conda/envs/yt-dlp"
 ENV_ROOT="${YTDLP_ENV_ROOT:-$DEFAULT_ENV_ROOT}"
 ARCH_NAME="$(uname -m)"
-YTDLP_VERSION="${YTDLP_VERSION:-2025.12.08}"
+YTDLP_CHANNEL="${YTDLP_CHANNEL:-nightly}"
+YTDLP_VERSION="${YTDLP_VERSION:-}"
 DENO_VERSION="${DENO_VERSION:-2.7.5}"
 
 case "$ARCH_NAME" in
@@ -32,9 +33,18 @@ case "$ARCH_NAME" in
     ;;
 esac
 
-YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp"
 DENO_URL="https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/${DENO_ARCHIVE_NAME}"
 ZIP_PRIVACY_PATTERN='cookie|history|config\.json|user[- ]data|electron-session|electron-user-data|subtitle-cleanup-config|api[_-]?key'
+
+if [[ -z "${YTDLP_URL:-}" ]]; then
+  if [[ "$YTDLP_CHANNEL" == "nightly" ]]; then
+    YTDLP_URL="https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp"
+  elif [[ -n "$YTDLP_VERSION" ]]; then
+    YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp"
+  else
+    YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"
+  fi
+fi
 
 cleanup_tools() {
   rm -rf "$TOOLS_BIN_DIR" "$TOOLS_LIB_DIR"

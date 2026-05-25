@@ -11,12 +11,22 @@ TOOLS_LIB_DIR="$TOOLS_DIR/lib"
 TMP_DIR="$(mktemp -d)"
 APP_VERSION="$(node -p "require('$PROJECT_ROOT/package.json').version")"
 VERSION_DIR="$RELEASE_DIR/$APP_VERSION"
-YTDLP_VERSION="${YTDLP_VERSION:-2025.12.08}"
+YTDLP_CHANNEL="${YTDLP_CHANNEL:-nightly}"
+YTDLP_VERSION="${YTDLP_VERSION:-}"
 DENO_VERSION="${DENO_VERSION:-2.7.5}"
-YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp.exe"
 DENO_URL="https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-x86_64-pc-windows-msvc.zip"
 FFMPEG_URL="${FFMPEG_URL:-https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip}"
 ZIP_PRIVACY_PATTERN='cookie|history|config\.json|user[- ]data|electron-session|electron-user-data|subtitle-cleanup-config|api[_-]?key'
+
+if [[ -z "${YTDLP_URL:-}" ]]; then
+  if [[ "$YTDLP_CHANNEL" == "nightly" ]]; then
+    YTDLP_URL="https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp.exe"
+  elif [[ -n "$YTDLP_VERSION" ]]; then
+    YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp.exe"
+  else
+    YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+  fi
+fi
 
 cleanup() {
   rm -rf "$TMP_DIR" "$TOOLS_BIN_DIR" "$TOOLS_LIB_DIR"
