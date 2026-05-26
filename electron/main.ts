@@ -1005,12 +1005,7 @@ function getHostWindow(webContentsId?: Electron.WebContents) {
 }
 
 function getDenoPath() {
-  if (isWindows) {
-    return resolveExecutablePath('deno') ?? denoCandidates.find((candidate) => existsSync(candidate)) ?? null
-  }
-
-  const existing = denoCandidates.find((candidate) => existsSync(candidate))
-  return existing ?? null
+  return resolveExecutablePath('deno') ?? denoCandidates.find((candidate) => existsSync(candidate)) ?? null
 }
 
 function listCookieFilesRecursive(rootDir: string, currentDir = rootDir): CookieFileInfo[] {
