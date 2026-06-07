@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { chmodSync, copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -18,7 +18,7 @@ type MediaAudioExportFormat = 'mp3' | 'wav' | 'flac' | 'm4a'
 type MediaSubtitleExportFormat = 'srt' | 'ass' | 'vtt'
 type SubtitleCleanupMode = 'single' | 'batch'
 type MediaMergeMode = 'selection' | 'folder'
-type MediaMergeOutputFormat = 'mp4' | 'mkv'
+type MediaMergeOutputFormat = 'mp4' | 'mkv' | 'mov'
 type RuntimeToolInstallTarget = 'deno'
 
 type DownloadRequest = {
@@ -30,6 +30,7 @@ type DownloadRequest = {
   videoPreset: VideoPreset
   extraArgs: string
   cookieFile: string | null
+  urlCookieFiles?: Array<string | null>
   concurrency: number
 }
 
@@ -42,6 +43,12 @@ type CookieFileInfo = {
   expiredCookieNames: string[]
   expiringSoonCookieCount: number
   expiringSoonCookieNames: string[]
+}
+
+type CookieZipImportResult = {
+  importedDir: string
+  importedFiles: string[]
+  cookieFiles: CookieFileInfo[]
 }
 
 type SelfCheckItem = {
@@ -111,6 +118,7 @@ type MediaMergePreviewResult = {
   unmatchedAudioCount: number
   estimatedSizeBytes: number | null
   estimatedDurationSeconds: number | null
+  longestDurationSeconds: number | null
   pairs: MediaMergePair[]
   skipped: MediaMergeSkippedItem[]
 }
@@ -190,6 +198,7 @@ type JobSnapshot = {
   outputPath?: string
   command?: string
   message?: string
+  exitCode?: number | null
   index: number
   totalJobs: number
 }
@@ -251,6 +260,7 @@ let queueSnapshot: QueueSnapshot = {
   concurrency: 1,
 }
 let batchCancelled = false
+let downloadSchedulerQueued = false
 let activeMediaProcess: ChildProcessWithoutNullStreams | null = null
 let mediaCancelled = false
 let activeSubtitleCleanupAbort: AbortController | null = null
@@ -503,6 +513,183 @@ function getCookiesDir() {
     : join(getDevRootDir(), 'cookies')
 
   return ensureDirectory(targetDir)
+}
+
+function getCookieExtensionRuntimeDir() {
+  return app.isPackaged
+    ? join(getPortableRootDir(), 'extensions', 'media-dock-cookie-exporter')
+    : join(getDevRootDir(), 'browser-extension', 'media-dock-cookie-exporter', 'dist')
+}
+
+function getCookieExtensionDir() {
+  const extensionDir = getCookieExtensionRuntimeDir()
+  return existsSync(extensionDir) && statSync(extensionDir).isDirectory() ? extensionDir : null
+}
+
+function getCookieExtensionZipPath() {
+  const extensionDir = app.isPackaged
+    ? join(getPortableRootDir(), 'extensions')
+    : join(getDevRootDir(), 'release', 'extensions')
+
+  if (!existsSync(extensionDir) || !statSync(extensionDir).isDirectory()) {
+    return null
+  }
+
+  const candidates = readdirSync(extensionDir)
+    .filter((fileName) => /^media-dock-cookie-exporter-.*\.zip$/i.test(fileName))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+
+  const latest = candidates.at(-1)
+  return latest ? join(extensionDir, latest) : null
+}
+
+function getCookieImportTempRoot() {
+  return ensureDirectory(join(getPortableDataRootDir(), 'app-cache', 'cookie-imports'))
+}
+
+function safeImportFolderName(value: string) {
+  const cleaned = value
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+
+  return cleaned || `media-dock-cookies-${Date.now()}`
+}
+
+function ensureUniqueImportDir(rootDir: string, preferredName: string) {
+  const baseName = safeImportFolderName(preferredName)
+  let candidate = join(rootDir, baseName)
+  let suffix = 2
+
+  while (existsSync(candidate)) {
+    candidate = join(rootDir, `${baseName}-${suffix}`)
+    suffix += 1
+  }
+
+  return ensureDirectory(candidate)
+}
+
+function getCookieImportRootScore(candidateDir: string) {
+  let score = 0
+
+  if (existsSync(join(candidateDir, 'manifest.json'))) score += 3
+  if (existsSync(join(candidateDir, 'cookies.txt'))) score += 2
+  if (existsSync(join(candidateDir, 'by-service')) && statSync(join(candidateDir, 'by-service')).isDirectory()) score += 2
+  if (existsSync(join(candidateDir, 'by-domain')) && statSync(join(candidateDir, 'by-domain')).isDirectory()) score += 1
+
+  return score
+}
+
+function findCookieExportRoot(extractRoot: string) {
+  const candidates: Array<{ dir: string; score: number }> = []
+
+  function visit(dirPath: string, depth: number) {
+    if (depth > 4 || !existsSync(dirPath) || !statSync(dirPath).isDirectory()) {
+      return
+    }
+
+    const score = getCookieImportRootScore(dirPath)
+    if (score > 0) {
+      candidates.push({ dir: dirPath, score })
+    }
+
+    for (const item of readdirSync(dirPath, { withFileTypes: true })) {
+      if (item.isDirectory()) {
+        visit(join(dirPath, item.name), depth + 1)
+      }
+    }
+  }
+
+  visit(extractRoot, 0)
+  const best = candidates.sort((a, b) => b.score - a.score || a.dir.length - b.dir.length)[0]
+  return best && best.score >= 2 ? best.dir : null
+}
+
+function normalizeCookieImportRelativePath(relativePath: string) {
+  const normalized = relativePath.replace(/\\/g, '/')
+  const lower = normalized.toLowerCase()
+
+  if (!normalized || normalized.startsWith('../') || normalized.includes('/../') || isAbsolute(relativePath)) {
+    return null
+  }
+
+  if (lower === 'cookies.txt') return 'cookies.txt'
+  if (lower === 'manifest.json') return 'manifest.json'
+  if (lower === 'readme.txt') return 'README.txt'
+
+  if (/^by-service\/[^/]+\.cookies\.txt$/i.test(normalized)) {
+    return normalized
+  }
+
+  if (/^by-domain\/[^/]+\.cookies\.txt$/i.test(normalized)) {
+    return normalized
+  }
+
+  return null
+}
+
+function copyCookieImportFiles(sourceRoot: string, targetRoot: string) {
+  const importedFiles: string[] = []
+
+  function visit(dirPath: string) {
+    for (const item of readdirSync(dirPath, { withFileTypes: true })) {
+      const fullPath = join(dirPath, item.name)
+      if (item.isDirectory()) {
+        visit(fullPath)
+        continue
+      }
+
+      if (!item.isFile()) {
+        continue
+      }
+
+      const allowedRelativePath = normalizeCookieImportRelativePath(relative(sourceRoot, fullPath))
+      if (!allowedRelativePath) {
+        continue
+      }
+
+      const outputPath = join(targetRoot, allowedRelativePath)
+      ensureDirectory(dirname(outputPath))
+      copyFileSync(fullPath, outputPath)
+      importedFiles.push(allowedRelativePath)
+    }
+  }
+
+  visit(sourceRoot)
+  importedFiles.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+  return importedFiles
+}
+
+async function importCookieZip(zipPath: string): Promise<CookieZipImportResult> {
+  if (!zipPath || !existsSync(zipPath)) {
+    throw new Error(`Cookie export zip does not exist: ${zipPath}`)
+  }
+
+  const extractDir = join(getCookieImportTempRoot(), `extract-${Date.now()}`)
+
+  try {
+    await extractZip(zipPath, extractDir)
+    const sourceRoot = findCookieExportRoot(extractDir)
+    if (!sourceRoot) {
+      throw new Error('The selected zip does not look like a Media Dock cookie export.')
+    }
+
+    const importedDir = ensureUniqueImportDir(getCookiesDir(), parse(zipPath).name)
+    const importedFiles = copyCookieImportFiles(sourceRoot, importedDir)
+    if (importedFiles.length === 0) {
+      rmSync(importedDir, { recursive: true, force: true })
+      throw new Error('No supported cookie files were found in the selected zip.')
+    }
+
+    return {
+      importedDir,
+      importedFiles,
+      cookieFiles: listCookieFilesRecursive(getCookiesDir()),
+    }
+  } finally {
+    rmSync(extractDir, { recursive: true, force: true })
+  }
 }
 
 function getRuntimeToolsInstallRoot() {
@@ -1364,7 +1551,10 @@ function emit(payload: unknown) {
 }
 
 function emitMedia(payload: unknown) {
-  mediaToolsWindow?.webContents.send('media-tools:update', payload)
+  mainWindow?.webContents.send('media-tools:update', payload)
+  if (mediaToolsWindow && mediaToolsWindow.id !== mainWindow?.id) {
+    mediaToolsWindow.webContents.send('media-tools:update', payload)
+  }
 }
 
 function emitQueue(message?: string) {
@@ -1389,6 +1579,30 @@ function emitLog(line: string, stream: 'stdout' | 'stderr' | 'system', jobId?: s
     stream,
     jobId,
   })
+}
+
+function terminateProcess(child: ChildProcessWithoutNullStreams | null, label: string) {
+  if (!child || child.killed) {
+    return
+  }
+
+  const pid = child.pid
+  try {
+    if (isWindows && pid) {
+      spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true })
+      return
+    }
+
+    child.kill('SIGTERM')
+    setTimeout(() => {
+      if (!child.killed) {
+        child.kill('SIGKILL')
+      }
+    }, 1200)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    emitLog(`[${label}] failed to terminate process: ${message}`, 'stderr')
+  }
 }
 
 function resolveDefaultDownloads() {
@@ -1550,6 +1764,57 @@ function hasExtraArg(args: string[], option: string) {
   return args.some((arg) => arg === option || arg.startsWith(`${option}=`))
 }
 
+function shouldForceSinglePlaylistItem(extraArgs: string[]) {
+  return ![
+    '--yes-playlist',
+    '--playlist-items',
+    '--playlist-start',
+    '--playlist-end',
+    '--max-downloads',
+  ].some((option) => hasExtraArg(extraArgs, option))
+}
+
+function normalizeDownloadUrl(url: string) {
+  try {
+    const parsed = new URL(url)
+    const hostname = parsed.hostname.toLowerCase()
+    const isDouyin = hostname === 'douyin.com' || hostname.endsWith('.douyin.com')
+    const modalId = parsed.searchParams.get('modal_id')?.trim()
+
+    if (isDouyin && modalId && /^\d{10,}$/.test(modalId) && !/^\/video\/\d+/.test(parsed.pathname)) {
+      return `https://www.douyin.com/video/${modalId}`
+    }
+  } catch {
+    return url
+  }
+
+  return url
+}
+
+function getUrlNormalizationHint(originalUrl: string, normalizedUrl: string) {
+  if (originalUrl === normalizedUrl) {
+    return null
+  }
+  if (originalUrl.toLowerCase().includes('douyin.com')) {
+    return `提示：检测到抖音弹窗/精选入口，已转换为单条视频链接：${normalizedUrl}`
+  }
+  return `提示：已转换为 yt-dlp 更容易识别的链接：${normalizedUrl}`
+}
+
+function getPreflightDownloadHint(url: string) {
+  const lowerUrl = url.toLowerCase()
+  if (lowerUrl.includes('tiktok.com/foryou')) {
+    return '提示：TikTok /foryou 是推荐流页面，不是单条视频链接。请打开目标视频，复制 @用户名/video/数字ID 或 vm/vt 分享短链后再下载。'
+  }
+  if (/bilibili\.com\/cheese\/play\/ss/i.test(lowerUrl)) {
+    return '提示：这个 B 站课程链接看起来是系列入口。软件会强制只处理 1 个条目，若要下载指定小节，请优先复制具体 ep 链接。'
+  }
+  if (lowerUrl.includes('list=') || lowerUrl.includes('/playlist?') || lowerUrl.includes('/playlist/')) {
+    return '提示：检测到播放列表参数。默认只处理当前链接中的 1 个条目，避免展开整个列表。'
+  }
+  return null
+}
+
 function videoPresetToFormat(value: VideoPreset) {
   switch (value) {
     case '2160p':
@@ -1578,13 +1843,61 @@ function audioQualityToValue(value: AudioQuality) {
   }
 }
 
-function buildArgs(request: DownloadRequest, url: string) {
+function detectKnownCookieTarget(url: string) {
+  const lowerUrl = url.toLowerCase()
+  if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be') || lowerUrl.includes('googlevideo.com')) return 'youtube'
+  if (lowerUrl.includes('bilibili.com') || lowerUrl.includes('b23.tv') || lowerUrl.includes('biligame.com')) return 'bilibili'
+  if (lowerUrl.includes('douyin.com') || lowerUrl.includes('iesdouyin.com')) return 'douyin'
+  if (lowerUrl.includes('tiktok.com')) return 'tiktok'
+  return null
+}
+
+function cookieFileLooksMismatchedForUrl(cookieFile: string | null | undefined, url: string) {
+  if (!cookieFile) return false
+  const target = detectKnownCookieTarget(url)
+  if (!target) return false
+  const normalized = cookieFile.replace(/\\/g, '/').toLowerCase()
+  const tokensByTarget: Record<string, string[]> = {
+    youtube: ['youtube', 'google.com', 'google.cookies.txt'],
+    bilibili: ['bilibili', 'b-site', 'b23.tv', 'biligame'],
+    douyin: ['douyin', 'iesdouyin'],
+    tiktok: ['tiktok'],
+  }
+  const ownTokens = tokensByTarget[target] ?? []
+  const hasOwnToken = ownTokens.some((token) => normalized.includes(token))
+  const hasOtherServiceToken = Object.entries(tokensByTarget)
+    .filter(([key]) => key !== target)
+    .some(([, tokens]) => tokens.some((token) => normalized.includes(token)))
+  return hasOtherServiceToken && !hasOwnToken
+}
+
+function getCookieFileForJob(request: DownloadRequest, jobIndex: number, url: string) {
+  const manualCookieFile = request.cookieFile?.trim()
+  const autoCookieFile = request.urlCookieFiles?.[jobIndex - 1]?.trim()
+  if (manualCookieFile && !cookieFileLooksMismatchedForUrl(manualCookieFile, url)) {
+    return manualCookieFile
+  }
+  return autoCookieFile || null
+}
+
+function getCookieAutoFallbackHint(request: DownloadRequest, url: string, jobIndex: number) {
+  const manualCookieFile = request.cookieFile?.trim()
+  const autoCookieFile = request.urlCookieFiles?.[jobIndex - 1]?.trim()
+  if (!manualCookieFile || !autoCookieFile || !cookieFileLooksMismatchedForUrl(manualCookieFile, url)) {
+    return null
+  }
+  return '提示：检测到手动 Cookie 与当前链接来源不匹配，本任务已改用按链接自动匹配的 Cookie。'
+}
+
+function buildArgs(request: DownloadRequest, url: string, jobIndex: number) {
   const ffmpegPath = getFfmpegPath()
   const denoPath = getDenoPath()
   const extraArgs = tokenizeExtraArgs(request.extraArgs.trim())
   const skipDownload = extraArgs.includes('--skip-download')
+  const cookieFile = getCookieFileForJob(request, jobIndex, url)
   const args = [
     '--no-update',
+    '--no-playlist',
     '--progress',
     '--newline',
     '--progress-template',
@@ -1598,6 +1911,10 @@ function buildArgs(request: DownloadRequest, url: string) {
     '-o',
     join(request.outputDir, '%(title)s [%(id)s].%(ext)s'),
   ]
+
+  if (shouldForceSinglePlaylistItem(extraArgs)) {
+    args.push('--playlist-items', '1')
+  }
 
   if (denoPath && !hasExtraArg(extraArgs, '--js-runtimes')) {
     args.push('--js-runtimes', `deno:${denoPath}`)
@@ -1615,8 +1932,8 @@ function buildArgs(request: DownloadRequest, url: string) {
     args.push('-f', videoPresetToFormat(request.videoPreset), '--merge-output-format', 'mp4')
   }
 
-  if (request.cookieFile) {
-    args.push('--cookies', request.cookieFile)
+  if (cookieFile) {
+    args.push('--cookies', cookieFile)
   }
 
   args.push(...extraArgs)
@@ -1639,7 +1956,31 @@ function getDownloadHint(line: string, url: string) {
   if (lowerUrl.includes('bilibili.com') && (lowerLine.includes('http error 412') || lowerLine.includes('precondition failed'))) {
     return '提示：B 站返回 412 通常是登录态、风控或请求条件不匹配。请优先选择 B 站专用 cookies 文件后重试。'
   }
-  if ((lowerLine.includes('http error 403') || lowerLine.includes('forbidden')) && (lowerUrl.includes('bilibili.com') || lowerUrl.includes('youtube.com') || lowerUrl.includes('youku.com'))) {
+  if (lowerUrl.includes('bilibili.com') && (lowerLine.includes('purchase the course') || lowerLine.includes('need to purchase'))) {
+    return '提示：这是 B 站课程权限问题。请确认当前账号已购买/可观看该课程，并重新用同一个浏览器导出 B 站 Cookie；如果链接是课程系列 ss 入口，建议换成具体 ep 小节链接。'
+  }
+  if (lowerUrl.includes('bilibili.com') && (lowerLine.includes('eof occurred in violation of protocol') || lowerLine.includes('_ssl') || lowerLine.includes('ssl'))) {
+    return '提示：这是 B 站下载过程中的 SSL/TLS 连接中断，更像网络、代理、CDN 或并发连接波动。若本地留下有画面没声音的文件，多半是音轨或合并未完成的半成品；建议删除残留文件后，降低并发、关闭/切换代理或稍后重试。'
+  }
+  if ((lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) && (lowerLine.includes('sign in to confirm') || lowerLine.includes('not a bot'))) {
+    return '提示：YouTube 触发了登录/机器人校验。请确认本任务使用的是 YouTube 专用 Cookie；多来源批量下载时建议使用自动匹配 Cookie，不要把 B 站 Cookie 强制套给 YouTube。'
+  }
+  if (lowerLine.includes('unsupported url') && lowerUrl.includes('tiktok.com/foryou')) {
+    return '提示：这个 TikTok 链接是推荐流入口，yt-dlp 无法从 /foryou 判断要下载哪一条视频。请复制具体视频页或分享短链。'
+  }
+  if (lowerLine.includes('unsupported url') && lowerUrl.includes('douyin.com') && lowerUrl.includes('modal_id=')) {
+    return '提示：这个抖音链接是弹窗入口。若自动转换后仍失败，请在网页中打开单条视频，再复制 /video/数字ID 形式的链接。'
+  }
+  if (lowerLine.includes('unsupported url') && lowerUrl.includes('douyin.com')) {
+    return '提示：这个抖音链接不是单条视频页。请复制具体作品链接，优先使用 /video/数字ID 或分享出来的单条视频链接。'
+  }
+  if (lowerUrl.includes('douyin.com') && lowerLine.includes('fresh cookies')) {
+    return '提示：抖音返回需要 fresh cookies。请在同一个浏览器里打开这条视频，确认能正常播放后立刻重新用 MediaCookies 导出；如果浏览器里也要验证/刷新/登录，需要先完成验证。'
+  }
+  if (lowerUrl.includes('tiktok.com') && (lowerLine.includes('tls connect error') || lowerLine.includes('curl: (35)'))) {
+    return '提示：TikTok 连接在 TLS 阶段失败，更像网络、代理或系统证书/加密库兼容问题。可以先换网络或代理节点，或稍后重试；Cookie 已经按 TikTok 来源使用。'
+  }
+  if ((lowerLine.includes('http error 403') || lowerLine.includes('forbidden')) && (lowerUrl.includes('bilibili.com') || lowerUrl.includes('youtube.com'))) {
     return '提示：这个站点可能需要登录态或会员权限。请改用对应站点专用 cookies 文件后重试。'
   }
   return null
@@ -1945,7 +2286,7 @@ async function inspectMergeCandidate(candidatePath: string): Promise<{ role: Ret
 
 async function buildMediaMergePreview(
   request: MediaMergeRequest,
-  options: { emitLogs: boolean; ensureOutputAvailable: boolean },
+  options: { emitLogs: boolean; ensureOutputAvailable: boolean; respectCancellation: boolean },
 ): Promise<MediaMergePreviewResult> {
   const skipped: MediaMergeSkippedItem[] = []
   const inputPaths = collectMergeInputPaths(request, skipped)
@@ -1960,12 +2301,19 @@ async function buildMediaMergePreview(
   const videoFiles: MergeCandidate[] = []
   const audioFiles: MergeCandidate[] = []
 
-  for (const candidatePath of inputPaths) {
-    if (mediaCancelled) {
+  if (options.emitLogs) {
+    emitMedia({ type: 'log', line: `[scan] inspecting ${inputPaths.length} candidate file(s).`, stream: 'system' })
+  }
+
+  for (const [candidateIndex, candidatePath] of inputPaths.entries()) {
+    if (options.respectCancellation && mediaCancelled) {
       throw new Error('Media tool action was cancelled.')
     }
 
     try {
+      if (options.emitLogs) {
+        emitMedia({ type: 'log', line: `[scan] [${candidateIndex + 1}/${inputPaths.length}] ${parse(candidatePath).base}`, stream: 'stdout' })
+      }
       const { role, candidate } = await inspectMergeCandidate(candidatePath)
       if (role === 'video') {
         videoFiles.push(candidate)
@@ -2040,6 +2388,14 @@ async function buildMediaMergePreview(
     ),
   }))
 
+  if (options.emitLogs) {
+    emitMedia({
+      type: 'log',
+      line: `[scan] found ${videoFiles.length} video candidate(s), ${audioFiles.length} audio candidate(s), ${finalizedPairs.length} merge pair(s).`,
+      stream: 'system',
+    })
+  }
+
   const estimatedSizeBytes = finalizedPairs.reduce<number | null>((total, pair) => {
     if (total === null || pair.estimatedSizeBytes === null) {
       return null
@@ -2052,6 +2408,12 @@ async function buildMediaMergePreview(
     }
     return (total ?? 0) + pair.durationSeconds
   }, null)
+  const longestDurationSeconds = finalizedPairs.reduce<number | null>((maxDuration, pair) => {
+    if (pair.durationSeconds === null) {
+      return maxDuration
+    }
+    return maxDuration === null ? pair.durationSeconds : Math.max(maxDuration, pair.durationSeconds)
+  }, null)
 
   return {
     inputCount: inputPaths.length,
@@ -2062,12 +2424,44 @@ async function buildMediaMergePreview(
     unmatchedAudioCount: audioFiles.length - usedAudioPaths.size,
     estimatedSizeBytes,
     estimatedDurationSeconds,
+    longestDurationSeconds,
     pairs: finalizedPairs,
     skipped,
   }
 }
 
 async function runMergePair(ffmpegPath: string, pair: MediaMergePair, outputFormat: MediaMergeOutputFormat, outputDir: string) {
+  if (outputFormat === 'mov') {
+    const resolveArgs = [
+      '-y',
+      '-i',
+      pair.videoPath,
+      '-i',
+      pair.audioPath,
+      '-map',
+      '0:v:0',
+      '-map',
+      '1:a:0',
+      '-c:v',
+      'prores_ks',
+      '-profile:v',
+      '3',
+      '-pix_fmt',
+      'yuv422p10le',
+      '-c:a',
+      'pcm_s16le',
+      '-ar',
+      '48000',
+      '-shortest',
+      pair.outputPath,
+    ]
+
+    emitMedia({ type: 'command', command: stringifyExecutableCommand(ffmpegPath, resolveArgs) })
+    emitMedia({ type: 'log', line: `[merge] DaVinci MOV transcode -> ${parse(pair.outputPath).base}`, stream: 'system' })
+    await runLoggedProcess(ffmpegPath, resolveArgs, outputDir)
+    return
+  }
+
   const copyArgs = [
     '-y',
     '-i',
@@ -2086,6 +2480,7 @@ async function runMergePair(ffmpegPath: string, pair: MediaMergePair, outputForm
   ]
 
   emitMedia({ type: 'command', command: stringifyExecutableCommand(ffmpegPath, copyArgs) })
+  emitMedia({ type: 'log', line: `[merge] stream copy -> ${parse(pair.outputPath).base}`, stream: 'system' })
 
   try {
     await runLoggedProcess(ffmpegPath, copyArgs, outputDir)
@@ -2124,6 +2519,7 @@ async function runMergePair(ffmpegPath: string, pair: MediaMergePair, outputForm
     ]
 
     emitMedia({ type: 'command', command: stringifyExecutableCommand(ffmpegPath, fallbackArgs) })
+    emitMedia({ type: 'log', line: `[merge] AAC transcode fallback -> ${parse(pair.outputPath).base}`, stream: 'system' })
     await runLoggedProcess(ffmpegPath, fallbackArgs, outputDir)
   }
 }
@@ -2145,15 +2541,22 @@ async function runLoggedProcess(executable: string, args: string[], cwd: string)
     let stdoutBuffer = ''
     let stderrBuffer = ''
 
-    const flush = (stream: 'stdout' | 'stderr') => {
+    const flush = (stream: 'stdout' | 'stderr', final = false) => {
       const current = stream === 'stdout' ? stdoutBuffer : stderrBuffer
-      const lines = current.split(/\r?\n/)
+      const lines = current.split(/\r?\n|\r/)
       const remainder = lines.pop() ?? ''
 
       for (const line of lines) {
         const trimmed = line.trim()
         if (!trimmed) continue
         emitMedia({ type: 'log', line: trimmed, stream })
+      }
+
+      if (final && remainder.trim()) {
+        emitMedia({ type: 'log', line: remainder.trim(), stream })
+        if (stream === 'stdout') stdoutBuffer = ''
+        else stderrBuffer = ''
+        return
       }
 
       if (stream === 'stdout') stdoutBuffer = remainder
@@ -2178,8 +2581,8 @@ async function runLoggedProcess(executable: string, args: string[], cwd: string)
     child.on('close', (code) => {
       stdoutBuffer += stdoutDecoder.end()
       stderrBuffer += stderrDecoder.end()
-      flush('stdout')
-      flush('stderr')
+      flush('stdout', true)
+      flush('stderr', true)
       activeMediaProcess = null
 
       if (mediaCancelled) {
@@ -2267,57 +2670,82 @@ async function runMediaMerge(request: MediaMergeRequest) {
   mediaCancelled = false
   emitMedia({ type: 'clear' })
   emitMedia({
+    type: 'log',
+    line: request.mode === 'selection'
+      ? `[merge] scanning ${request.inputPaths.length} selected file(s).`
+      : `[merge] scanning folder: ${request.inputDir ?? ''}`,
+    stream: 'system',
+  })
+  emitMedia({
     type: 'status',
     status: 'running',
     message: request.mode === 'selection' ? 'Scanning selected files for media pairs...' : 'Scanning folder for media pairs...',
   })
 
-  const mergePreview = await buildMediaMergePreview(request, { emitLogs: true, ensureOutputAvailable: true })
-  const { pairs } = mergePreview
+  try {
+    const mergePreview = await buildMediaMergePreview(request, { emitLogs: true, ensureOutputAvailable: true, respectCancellation: true })
+    const { pairs } = mergePreview
 
-  if (pairs.length === 0) {
-    throw new Error('No matching video/audio pairs were found.')
-  }
+    if (pairs.length === 0) {
+      throw new Error('No matching video/audio pairs were found.')
+    }
 
-  for (const [index, pair] of pairs.entries()) {
-    if (mediaCancelled) {
-      throw new Error('Media tool action was cancelled.')
+    emitMedia({ type: 'log', line: `[merge] ready to merge ${pairs.length} pair(s) as ${request.outputFormat.toUpperCase()}.`, stream: 'system' })
+
+    for (const [index, pair] of pairs.entries()) {
+      if (mediaCancelled) {
+        throw new Error('Media tool action was cancelled.')
+      }
+
+      emitMedia({
+        type: 'log',
+        line: `[merge] [${index + 1}/${pairs.length}] ${parse(pair.videoPath).base} + ${parse(pair.audioPath).base} -> ${parse(pair.outputPath).base}`,
+        stream: 'system',
+      })
+      emitMedia({
+        type: 'status',
+        status: 'running',
+        message: `Merging media pair ${index + 1}/${pairs.length}: ${parse(pair.videoPath).base} (${pair.matchReason})`,
+        progress: {
+          current: index + 1,
+          total: pairs.length,
+          currentPath: pair.videoPath,
+        },
+      })
+
+      await runMergePair(ffmpegPath, pair, request.outputFormat, request.outputDir)
+      outputs.push(pair.outputPath)
+      emitMedia({ type: 'log', line: `[merge] [${index + 1}/${pairs.length}] done: ${pair.outputPath}`, stream: 'stdout' })
+      emitMedia({
+        type: 'status',
+        status: 'running',
+        message: `Merged ${index + 1}/${pairs.length} media pair(s).`,
+        outputs: [pair.outputPath],
+        progress: {
+          current: index + 1,
+          total: pairs.length,
+          currentPath: pair.videoPath,
+        },
+      })
     }
 
     emitMedia({
       type: 'status',
-      status: 'running',
-      message: `Merging media pair ${index + 1}/${pairs.length}: ${parse(pair.videoPath).base} (${pair.matchReason})`,
-      progress: {
-        current: index + 1,
-        total: pairs.length,
-        currentPath: pair.videoPath,
-      },
+      status: 'success',
+      message: `Merged ${outputs.length} video/audio pair(s).`,
+      outputs,
     })
 
-    await runMergePair(ffmpegPath, pair, request.outputFormat, request.outputDir)
-    outputs.push(pair.outputPath)
+    return outputs
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Media merge failed.'
     emitMedia({
       type: 'status',
-      status: 'running',
-      message: `Merged ${index + 1}/${pairs.length} media pair(s).`,
-      outputs: [pair.outputPath],
-      progress: {
-        current: index + 1,
-        total: pairs.length,
-        currentPath: pair.videoPath,
-      },
+      status: message.toLowerCase().includes('cancelled') ? 'cancelled' : 'error',
+      message,
     })
+    throw error
   }
-
-  emitMedia({
-    type: 'status',
-    status: 'success',
-    message: `Merged ${outputs.length} video/audio pair(s).`,
-    outputs,
-  })
-
-  return outputs
 }
 
 function refreshQueueSnapshot() {
@@ -2347,6 +2775,26 @@ function finishIfBatchDone() {
   }
 }
 
+function scheduleNextJobs() {
+  if (downloadSchedulerQueued) {
+    return
+  }
+
+  downloadSchedulerQueued = true
+  setImmediate(() => {
+    downloadSchedulerQueued = false
+    try {
+      startNextJobs()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      emitLog(`[queue] scheduler failed: ${message}`, 'stderr')
+      refreshQueueSnapshot()
+      emitQueue('Queue scheduler hit an error.')
+      finishIfBatchDone()
+    }
+  })
+}
+
 function startNextJobs() {
   if (!activeBatchRequest) {
     return
@@ -2358,203 +2806,244 @@ function startNextJobs() {
       continue
     }
 
-    const args = buildArgs(activeBatchRequest, next.url)
-    const command = stringifyCommand(args)
-    const snapshot: JobSnapshot = {
-      jobId: next.jobId,
-      url: next.url,
-      title: next.url,
-      status: 'running',
-      percent: null,
-      downloaded: '--',
-      total: '--',
-      speed: '--',
-      eta: '--',
-      command,
-      message: 'Download started.',
-      index: next.index,
-      totalJobs: next.totalJobs,
-    }
+    const originalUrl = next.url
+    const downloadUrl = normalizeDownloadUrl(originalUrl)
 
-    emitLog(`[job ${next.index}/${next.totalJobs}] ${next.url}`, 'system', next.jobId)
-    emitLog(`> ${command}`, 'system', next.jobId)
-    emitJob(snapshot)
-
-    const ytDlpPath = getYtDlpPath()
-    const child = spawn(ytDlpPath, args, {
-      cwd: activeBatchRequest.outputDir,
-      env: {
-        ...process.env,
-        PATH: buildToolPathEnv(),
-        DYLD_LIBRARY_PATH: buildDyldLibraryPathEnv(),
-        PYTHONIOENCODING: 'utf-8',
-        PYTHONUTF8: '1',
-      },
-    })
-
-    const stdoutDecoder = createStreamDecoder()
-    const stderrDecoder = createStreamDecoder()
-
-    const context: JobContext = {
-      request: activeBatchRequest,
-      jobId: next.jobId,
-      url: next.url,
-      index: next.index,
-      totalJobs: next.totalJobs,
-      snapshot,
-      command,
-      process: child,
-    }
-
-    activeJobs.set(next.jobId, context)
-    refreshQueueSnapshot()
-    emitQueue()
-
-    const handleLine = (rawLine: string, stream: 'stdout' | 'stderr') => {
-      const line = rawLine.trim()
-      if (!line) {
-        return
+    try {
+      const args = buildArgs(activeBatchRequest, downloadUrl, next.index)
+      const command = stringifyCommand(args)
+      const snapshot: JobSnapshot = {
+        jobId: next.jobId,
+        url: originalUrl,
+        title: originalUrl,
+        status: 'running',
+        percent: null,
+        downloaded: '--',
+        total: '--',
+        speed: '--',
+        eta: '--',
+        command,
+        message: 'Download started.',
+        index: next.index,
+        totalJobs: next.totalJobs,
       }
 
-      const job = activeJobs.get(next.jobId)
-      if (!job) {
-        return
+      emitLog(`[job ${next.index}/${next.totalJobs}] ${originalUrl}`, 'system', next.jobId)
+      const normalizationHint = getUrlNormalizationHint(originalUrl, downloadUrl)
+      if (normalizationHint) {
+        emitLog(normalizationHint, 'system', next.jobId)
+      }
+      const preflightHint = getPreflightDownloadHint(originalUrl)
+      if (preflightHint) {
+        emitLog(preflightHint, 'system', next.jobId)
+      }
+      const cookieFallbackHint = getCookieAutoFallbackHint(activeBatchRequest, downloadUrl, next.index)
+      if (cookieFallbackHint) {
+        emitLog(cookieFallbackHint, 'system', next.jobId)
+      }
+      emitLog(`> ${command}`, 'system', next.jobId)
+      emitJob(snapshot)
+
+      const ytDlpPath = getYtDlpPath()
+      const child = spawn(ytDlpPath, args, {
+        cwd: activeBatchRequest.outputDir,
+        env: {
+          ...process.env,
+          PATH: buildToolPathEnv(),
+          DYLD_LIBRARY_PATH: buildDyldLibraryPathEnv(),
+          PYTHONIOENCODING: 'utf-8',
+          PYTHONUTF8: '1',
+        },
+      })
+
+      const stdoutDecoder = createStreamDecoder()
+      const stderrDecoder = createStreamDecoder()
+
+      const context: JobContext = {
+        request: activeBatchRequest,
+        jobId: next.jobId,
+        url: downloadUrl,
+        index: next.index,
+        totalJobs: next.totalJobs,
+        snapshot,
+        command,
+        process: child,
       }
 
-      const progress = parseProgressLine(line)
-      if (progress) {
+      activeJobs.set(next.jobId, context)
+      refreshQueueSnapshot()
+      emitQueue()
+
+      const handleLine = (rawLine: string, stream: 'stdout' | 'stderr') => {
+        const line = rawLine.trim()
+        if (!line) {
+          return
+        }
+
+        const job = activeJobs.get(next.jobId)
+        if (!job) {
+          return
+        }
+
+        const progress = parseProgressLine(line)
+        if (progress) {
+          job.snapshot = {
+            ...job.snapshot,
+            ...progress,
+            status: 'running',
+            message: `Downloading at ${progress.speed}`,
+          }
+          emitJob(job.snapshot)
+          return
+        }
+
+        if (line.startsWith('TITLE|')) {
+          job.snapshot = {
+            ...job.snapshot,
+            title: line.replace('TITLE|', ''),
+          }
+          emitJob(job.snapshot)
+          return
+        }
+
+        if (line.startsWith('FILEPATH|')) {
+          job.snapshot = {
+            ...job.snapshot,
+            outputPath: line.replace('FILEPATH|', ''),
+          }
+          emitJob(job.snapshot)
+          return
+        }
+
+        emitLog(line, stream, next.jobId)
+        const hint = getDownloadHint(line, originalUrl)
+        if (hint) {
+          emitLog(hint, 'system', next.jobId)
+        }
+      }
+
+      let stdoutBuffer = ''
+      let stderrBuffer = ''
+
+      const flushLines = (stream: 'stdout' | 'stderr') => {
+        const currentBuffer = stream === 'stdout' ? stdoutBuffer : stderrBuffer
+        const lines = currentBuffer.split(/[\r\n]+/)
+        const endsWithLineBreak = /[\r\n]$/.test(currentBuffer)
+        const remainder = endsWithLineBreak ? '' : lines.pop() ?? ''
+
+        lines.forEach((line) => handleLine(line, stream))
+
+        if (stream === 'stdout') {
+          stdoutBuffer = remainder
+        } else {
+          stderrBuffer = remainder
+        }
+      }
+
+      child.stdout.on('data', (chunk) => {
+        stdoutBuffer += stdoutDecoder.write(chunk)
+        flushLines('stdout')
+      })
+
+      child.stderr.on('data', (chunk) => {
+        stderrBuffer += stderrDecoder.write(chunk)
+        flushLines('stderr')
+      })
+
+      child.on('close', (code) => {
+        stdoutBuffer += stdoutDecoder.end()
+        stderrBuffer += stderrDecoder.end()
+
+        if (stdoutBuffer.trim()) {
+          handleLine(stdoutBuffer, 'stdout')
+          stdoutBuffer = ''
+        }
+
+        if (stderrBuffer.trim()) {
+          handleLine(stderrBuffer, 'stderr')
+          stderrBuffer = ''
+        }
+
+        const job = activeJobs.get(next.jobId)
+        if (!job) {
+          return
+        }
+
+        const status: DownloadStatus = batchCancelled ? 'cancelled' : code === 0 ? 'success' : 'error'
         job.snapshot = {
           ...job.snapshot,
-          ...progress,
-          status: 'running',
-          message: `Downloading at ${progress.speed}`,
+          status,
+          exitCode: code ?? null,
+          percent: status === 'success' ? 100 : job.snapshot.percent,
+          message:
+            status === 'cancelled'
+              ? 'Cancelled.'
+              : code === 0
+                ? 'Finished.'
+                : `Exited with code ${code ?? 'unknown'}.`,
         }
         emitJob(job.snapshot)
-        return
-      }
 
-      if (line.startsWith('TITLE|')) {
+        activeJobs.delete(next.jobId)
+        if (status === 'success') {
+          queueSnapshot.completed += 1
+        } else if (status === 'cancelled') {
+          queueSnapshot.cancelled += 1
+        } else {
+          queueSnapshot.failed += 1
+        }
+
+        refreshQueueSnapshot()
+        emitQueue()
+        scheduleNextJobs()
+        finishIfBatchDone()
+      })
+
+      child.on('error', (error) => {
+        const job = activeJobs.get(next.jobId)
+        if (!job) {
+          return
+        }
+
         job.snapshot = {
           ...job.snapshot,
-          title: line.replace('TITLE|', ''),
+          status: 'error',
+          exitCode: null,
+          message: `Failed to start: ${error.message}`,
         }
         emitJob(job.snapshot)
-        return
-      }
+        emitLog(`Failed to start: ${error.message}`, 'stderr', next.jobId)
 
-      if (line.startsWith('FILEPATH|')) {
-        job.snapshot = {
-          ...job.snapshot,
-          outputPath: line.replace('FILEPATH|', ''),
-        }
-        emitJob(job.snapshot)
-        return
-      }
-
-      emitLog(line, stream, next.jobId)
-      const hint = getDownloadHint(line, next.url)
-      if (hint) {
-        emitLog(hint, 'system', next.jobId)
-      }
-    }
-
-    let stdoutBuffer = ''
-    let stderrBuffer = ''
-
-    const flushLines = (stream: 'stdout' | 'stderr') => {
-      const currentBuffer = stream === 'stdout' ? stdoutBuffer : stderrBuffer
-      const lines = currentBuffer.split(/[\r\n]+/)
-      const endsWithLineBreak = /[\r\n]$/.test(currentBuffer)
-      const remainder = endsWithLineBreak ? '' : lines.pop() ?? ''
-
-      lines.forEach((line) => handleLine(line, stream))
-
-      if (stream === 'stdout') {
-        stdoutBuffer = remainder
-      } else {
-        stderrBuffer = remainder
-      }
-    }
-
-    child.stdout.on('data', (chunk) => {
-      stdoutBuffer += stdoutDecoder.write(chunk)
-      flushLines('stdout')
-    })
-
-    child.stderr.on('data', (chunk) => {
-      stderrBuffer += stderrDecoder.write(chunk)
-      flushLines('stderr')
-    })
-
-    child.on('close', (code) => {
-      stdoutBuffer += stdoutDecoder.end()
-      stderrBuffer += stderrDecoder.end()
-
-      if (stdoutBuffer.trim()) {
-        handleLine(stdoutBuffer, 'stdout')
-        stdoutBuffer = ''
-      }
-
-      if (stderrBuffer.trim()) {
-        handleLine(stderrBuffer, 'stderr')
-        stderrBuffer = ''
-      }
-
-      const job = activeJobs.get(next.jobId)
-      if (!job) {
-        return
-      }
-
-      const status: DownloadStatus = batchCancelled ? 'cancelled' : code === 0 ? 'success' : 'error'
-      job.snapshot = {
-        ...job.snapshot,
-        status,
-        percent: status === 'success' ? 100 : job.snapshot.percent,
-        message:
-          status === 'cancelled'
-            ? 'Cancelled.'
-            : code === 0
-              ? 'Finished.'
-              : `Exited with code ${code ?? 'unknown'}.`,
-      }
-      emitJob(job.snapshot)
-
-      activeJobs.delete(next.jobId)
-      if (status === 'success') {
-        queueSnapshot.completed += 1
-      } else if (status === 'cancelled') {
-        queueSnapshot.cancelled += 1
-      } else {
+        activeJobs.delete(next.jobId)
         queueSnapshot.failed += 1
-      }
-
-      refreshQueueSnapshot()
-      emitQueue()
-      startNextJobs()
-      finishIfBatchDone()
-    })
-
-    child.on('error', (error) => {
-      const job = activeJobs.get(next.jobId)
-      if (!job) {
-        return
-      }
-
-      job.snapshot = {
-        ...job.snapshot,
+        refreshQueueSnapshot()
+        emitQueue()
+        scheduleNextJobs()
+        finishIfBatchDone()
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const failedSnapshot: JobSnapshot = {
+        jobId: next.jobId,
+        url: originalUrl,
+        title: originalUrl,
         status: 'error',
-        message: `Failed to start: ${error.message}`,
+        percent: null,
+        downloaded: '--',
+        total: '--',
+        speed: '--',
+        eta: '--',
+        exitCode: null,
+        message: `Failed before start: ${message}`,
+        index: next.index,
+        totalJobs: next.totalJobs,
       }
-      emitJob(job.snapshot)
-      emitLog(`Failed to start: ${error.message}`, 'stderr', next.jobId)
-
-      activeJobs.delete(next.jobId)
       queueSnapshot.failed += 1
+      emitJob(failedSnapshot)
+      emitLog(`Failed before start: ${message}`, 'stderr', next.jobId)
       refreshQueueSnapshot()
       emitQueue()
-      startNextJobs()
-      finishIfBatchDone()
-    })
+    }
   }
 
   finishIfBatchDone()
@@ -2685,9 +3174,28 @@ ipcMain.handle('paths:get', () => ({
   defaultDownloadDir: resolveDefaultDownloads(),
   envName: getEnvironmentLabel(),
   cookiesDir: getCookiesDir(),
+  cookieExtensionDir: getCookieExtensionDir(),
+  cookieExtensionZipPath: getCookieExtensionZipPath(),
 }))
 
 ipcMain.handle('cookies:list', () => listCookieFilesRecursive(getCookiesDir()))
+
+ipcMain.handle('cookies:importZip', async (event) => {
+  const result = await dialog.showOpenDialog(getHostWindow(event.sender), {
+    defaultPath: getCookiesDir(),
+    properties: ['openFile'],
+    filters: [
+      { name: 'Media Dock cookie export', extensions: ['zip'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  })
+
+  if (result.canceled || !result.filePaths[0]) {
+    return null
+  }
+
+  return await importCookieZip(result.filePaths[0])
+})
 
 ipcMain.handle('self-check:get', () => ({
   items: getSelfCheckItems(),
@@ -2808,6 +3316,31 @@ ipcMain.handle('shell:openExternal', async (_event, targetUrl: string) => {
   await shell.openExternal(assertSafeExternalUrl(targetUrl))
 })
 
+ipcMain.handle('clipboard:writeText', (_event, text: string) => {
+  clipboard.writeText(String(text ?? ''))
+  return true
+})
+
+ipcMain.handle('logs:exportText', async (event, payload: { defaultName?: string; content: string }) => {
+  const defaultName = (payload.defaultName || `media-dock-log-${Date.now()}.txt`)
+    .split('')
+    .map((char) => (char.charCodeAt(0) < 32 || '<>:"/\\|?*'.includes(char) ? '-' : char))
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const result = await dialog.showSaveDialog(getHostWindow(event.sender), {
+    defaultPath: join(resolveDefaultDownloads(), defaultName.endsWith('.txt') ? defaultName : `${defaultName}.txt`),
+    filters: [{ name: 'Text log', extensions: ['txt', 'log'] }],
+  })
+
+  if (result.canceled || !result.filePath) {
+    return null
+  }
+
+  writeFileSync(result.filePath, String(payload.content ?? '').replace(/\r?\n/g, '\r\n'), 'utf8')
+  return result.filePath
+})
+
 ipcMain.handle('config:export', async (_event, config: unknown) => {
   const result = await dialog.showSaveDialog(mainWindow!, {
     defaultPath: join(resolveDefaultDownloads(), 'media-dock-config.json'),
@@ -2848,7 +3381,7 @@ ipcMain.handle('media:inspect', async (_event, inputPath: string) => {
 ipcMain.handle('media:cancel', () => {
   mediaCancelled = true
   subtitleCleanupCancelled = true
-  activeMediaProcess?.kill()
+  terminateProcess(activeMediaProcess, 'media')
   activeSubtitleCleanupAbort?.abort()
   activeSubtitleCleanupAbort = null
   emitMedia({
@@ -2882,19 +3415,18 @@ ipcMain.handle('media:merge-preview', async (_event, request: MediaMergeRequest)
     outputDir: request.outputDir ?? '',
   }
 
-  mediaCancelled = false
   if (!existsSync(getFfprobePath())) {
     throw new Error(`ffprobe was not found at ${getFfprobePath()}`)
   }
   if (normalizedRequest.mode === 'selection') {
     if (normalizedRequest.inputPaths.length === 0) {
-      return await buildMediaMergePreview(normalizedRequest, { emitLogs: false, ensureOutputAvailable: false })
+      return await buildMediaMergePreview(normalizedRequest, { emitLogs: false, ensureOutputAvailable: false, respectCancellation: false })
     }
   } else if (!normalizedRequest.inputDir || !existsSync(normalizedRequest.inputDir) || !statSync(normalizedRequest.inputDir).isDirectory()) {
     throw new Error(`Input directory does not exist: ${normalizedRequest.inputDir ?? ''}`)
   }
 
-  return await buildMediaMergePreview(normalizedRequest, { emitLogs: false, ensureOutputAvailable: false })
+  return await buildMediaMergePreview(normalizedRequest, { emitLogs: false, ensureOutputAvailable: false, respectCancellation: false })
 })
 
 ipcMain.handle('media:merge', async (_event, request: MediaMergeRequest) => {
@@ -2958,7 +3490,8 @@ ipcMain.handle('download:cancel', () => {
   batchCancelled = true
 
   for (const [, job] of activeJobs) {
-    job.process.kill()
+    emitLog('Cancelling this job...', 'system', job.jobId)
+    terminateProcess(job.process, `job ${job.jobId}`)
   }
 
   if (pendingJobs.length > 0) {
@@ -2985,6 +3518,13 @@ ipcMain.handle('download:start', async (_event, request: DownloadRequest) => {
   if (request.cookieFile && !existsSync(request.cookieFile)) {
     throw new Error(`Cookie file does not exist: ${request.cookieFile}`)
   }
+  if (!request.cookieFile) {
+    const missingCookieFiles = uniquePaths((request.urlCookieFiles ?? []).filter((value): value is string => Boolean(value?.trim())))
+      .filter((cookiePath) => !existsSync(cookiePath))
+    if (missingCookieFiles.length > 0) {
+      throw new Error(`Cookie file does not exist: ${missingCookieFiles[0]}`)
+    }
+  }
   if (urls.length === 0) {
     throw new Error('No URLs were provided.')
   }
@@ -3008,5 +3548,5 @@ ipcMain.handle('download:start', async (_event, request: DownloadRequest) => {
   }
 
   emitQueue(`Queue started with ${urls.length} job(s).`)
-  startNextJobs()
+  scheduleNextJobs()
 })

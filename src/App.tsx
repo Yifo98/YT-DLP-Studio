@@ -7,6 +7,8 @@ import { getThemeLabel, isTheme, THEME_OPTIONS, type Theme } from './themeOption
 
 type Language = 'zh' | 'en'
 type ActiveWorkspace = 'download' | 'media'
+type JobView = 'active' | 'finished' | 'issues'
+type DownloadConcurrency = 1 | 2 | 3
 type ExtraPresetId =
   | 'noPlaylist'
   | 'embedMetadata'
@@ -22,14 +24,21 @@ type ExtraPresetId =
 type CookieTargetId =
   | 'bilibili'
   | 'youtube'
-  | 'youku'
-  | 'iqiyi'
   | 'douyin'
-  | 'tencentVideo'
-  | 'xiaohongshu'
+  | 'tiktok'
+
+type LinkInspectionSeverity = 'info' | 'warning' | 'error'
+
+type LinkInspection = {
+  url: string
+  service: CookieTargetId | 'unknown'
+  severity: LinkInspectionSeverity
+  message: string
+}
 
 type HistoryItem = {
   id: string
+  title: string
   urls: string[]
   mode: DownloadMode
   outputDir: string
@@ -53,10 +62,12 @@ type StoredPreferences = {
   theme: Theme
   cookieFile: string
   enabledExtraPresets: ExtraPresetId[]
+  concurrency: DownloadConcurrency
 }
 
 const STORAGE_KEY = 'yt-dlp-studio.preferences'
 const HISTORY_KEY = 'yt-dlp-studio.history'
+const YT_DLP_SUPPORTED_SITES_URL = 'https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md'
 
 const DEFAULT_PREFS: StoredPreferences = {
   outputDir: '',
@@ -68,6 +79,7 @@ const DEFAULT_PREFS: StoredPreferences = {
   theme: 'graphite',
   cookieFile: '',
   enabledExtraPresets: [],
+  concurrency: 2,
 }
 
 const EXTRA_PRESETS: Record<Language, Record<ExtraPresetId, { label: string; desc: string; args: string[] }>> = {
@@ -122,22 +134,6 @@ const COOKIE_TARGETS: Array<{
     relatedMarkers: ['youtube.com', 'youtube', 'google.com'],
   },
   {
-    id: 'youku',
-    zhName: '优酷',
-    enName: 'Youku',
-    urlMarkers: ['youku.com', 'tudou.com', 'soku.com'],
-    preferredMarkers: ['by-service/youku.cookies.txt', 'youku.cookies.txt'],
-    relatedMarkers: ['youku.com', 'youku', 'tudou.com', 'soku.com'],
-  },
-  {
-    id: 'iqiyi',
-    zhName: '爱奇艺',
-    enName: 'iQIYI',
-    urlMarkers: ['iqiyi.com', 'pps.tv'],
-    preferredMarkers: ['by-service/iqiyi.cookies.txt', 'iqiyi.cookies.txt'],
-    relatedMarkers: ['iqiyi.com', 'iqiyi', 'pps.tv'],
-  },
-  {
     id: 'douyin',
     zhName: '抖音',
     enName: 'Douyin',
@@ -146,20 +142,12 @@ const COOKIE_TARGETS: Array<{
     relatedMarkers: ['douyin.com', 'douyin', 'iesdouyin.com'],
   },
   {
-    id: 'tencentVideo',
-    zhName: '腾讯视频',
-    enName: 'Tencent Video',
-    urlMarkers: ['v.qq.com', 'video.qq.com'],
-    preferredMarkers: ['by-service/tencent-video.cookies.txt', 'tencent-video.cookies.txt'],
-    relatedMarkers: ['tencent-video', 'qq.com'],
-  },
-  {
-    id: 'xiaohongshu',
-    zhName: '小红书',
-    enName: 'Xiaohongshu',
-    urlMarkers: ['xiaohongshu.com', 'xhslink.com'],
-    preferredMarkers: ['by-service/xiaohongshu.cookies.txt', 'xiaohongshu.cookies.txt'],
-    relatedMarkers: ['xiaohongshu.com', 'xiaohongshu', 'xhslink.com'],
+    id: 'tiktok',
+    zhName: 'TikTok',
+    enName: 'TikTok',
+    urlMarkers: ['tiktok.com', 'vm.tiktok.com'],
+    preferredMarkers: ['by-service/tiktok.cookies.txt', 'tiktok.cookies.txt'],
+    relatedMarkers: ['tiktok.com', 'tiktok'],
   },
 ]
 
@@ -208,15 +196,24 @@ function getText(language: Language) {
         urls: '链接列表',
         urlsPlaceholder: '每行一个链接',
         urlsHint: '支持一次粘贴多行链接，系统会自动拆成多条。',
+        linkCheck: '链接检查',
+        linkCheckHint: '抖音/TikTok 这类站点更依赖具体视频页；这里会提前提示明显不适合下载的入口。',
         addLink: '添加链接',
         clearLinks: '清空链接',
         outputFolder: '输出目录',
         browse: '选择目录',
         openCookiesDir: '打开 cookies 目录',
+        openCookieExtension: '打开插件目录',
+        importCookieZip: '导入 Cookie ZIP',
+        importingCookieZip: '导入中...',
+        cookieImportSuccess: '已导入 {count} 个 Cookie 文件。',
+        cookieImportFailed: '导入 Cookie ZIP 失败。',
         mode: '下载模式',
         video: '视频',
         audio: '音频',
-        sequentialHint: '现在默认按顺序下载，不再额外让你选队列模式。',
+        sequentialHint: '按列表顺序排队；并发任务会同时处理前几条。',
+        concurrency: '并发任务',
+        concurrencyHint: '最多同时跑 3 个链接；站点风控敏感时可以降回 1。',
         videoPreset: '画质策略',
         videoPresetHint: '默认自动最佳；B 站 4K 取决于源片、登录态和账号权限。',
         best: '自动最佳',
@@ -228,16 +225,18 @@ function getText(language: Language) {
         audioQuality: '音频质量',
         audioQualityHint: '只在音频模式生效。',
         cookieFile: '认证文件',
-        cookieAuto: '不使用 cookies 文件',
-        cookieHint: '先粘贴链接，软件会按 B 站、YouTube、优酷等站点提示推荐 Cookie。',
-        cookieFallback: '只选择目标站专用 Cookie，可以减少无关登录态暴露。',
+        cookieAuto: '自动按链接匹配',
+        cookieHint: '建议保持自动模式，软件会按每条链接匹配对应站点 Cookie；手动选择只适合同一来源批量任务。',
+        cookieFallback: '插件安装好以后，在插件里预览并导出 Cookie ZIP，再回到这里点“导入 Cookie ZIP”。预览不会生成缓存文件。',
+        supportedSitesLink: '查看 yt-dlp 官方支持站点',
+        supportedSitesHint: '下载来源以 yt-dlp 官方 supported sites 为准；Cookie 推荐只保留当前更稳定的少数站点。官方支持不代表会员、验证码、加密或风控内容一定可下。',
         cookieAdvisor: 'Cookie 推荐',
-        cookieAdvisorIdle: '粘贴链接后，这里会提示应该选哪个 Cookie。',
+        cookieAdvisorIdle: '粘贴链接后，这里会提示每个站点会自动使用哪些 Cookie。',
         cookieAdvisorUse: '使用推荐 Cookie',
         cookieAdvisorCurrent: '当前已选择推荐 Cookie。',
         cookieAdvisorNone: '这个链接暂时不需要专用 Cookie；遇到会员、登录态或 412/403 错误时，再选择目标站 Cookie。',
-        cookieAdvisorDetected: '检测到 {service} 链接，推荐使用 {file}。这样可以排除其他不相关 Cookie。',
-        cookieAdvisorMissing: '检测到 {service} 链接，但没有找到专用 Cookie。请把对应 by-service 文件放进认证目录。',
+        cookieAdvisorDetected: '检测到 {service} 链接，自动模式会使用 {file}。这样可以排除其他不相关 Cookie。',
+        cookieAdvisorMissing: '检测到 {service} 链接，但没有找到专用 Cookie。请用 MediaCookies 导出 ZIP 后在这里导入。',
         cookieAdvisorMismatch: '当前选择不像 {service} 专用 Cookie，可能会无效或带入过多无关登录态。',
         cookieMeta: '{count} 条 Cookie · {domains}',
         cookieExpiredWarning: '有 {count} 条 Cookie 已过期：{names}。登录态可能已失效，请重新导出 cookies.txt。',
@@ -258,7 +257,9 @@ function getText(language: Language) {
         queueProgress: '队列进度',
         queueProgressHint: '总进度会把当前下载中的实时百分比也算进去，不再只看完成数。',
         taskList: '任务清单',
-        taskListHint: '每个小格对应一个链接，完成后会亮起，出错会标红。',
+        taskListHint: '只显示待开始和正在下载的链接。',
+        finishedTaskList: '已完成 / 异常',
+        finishedTaskListHint: '完成、失败和取消的任务会移到这里。',
         taskListIdle: '粘贴链接后会生成任务格子。',
         taskTotal: '总数',
         liveDownload: '当前下载中',
@@ -270,8 +271,10 @@ function getText(language: Language) {
         done: '已完成',
         failed: '失败',
         cancelled: '已取消',
-        activeJobs: '任务进度',
-        activeJobsHint: '每张卡片代表一个链接。',
+        activeJobs: '当前下载',
+        activeJobsHint: '这里只保留正在下载的任务，完成后会移到下方。',
+        finishedJobs: '已完成 / 异常',
+        finishedJobsHint: '完成、失败或取消的任务可以在这里查看日志。',
         downloaded: '已下载',
         total: '总量',
         eta: '剩余',
@@ -280,6 +283,29 @@ function getText(language: Language) {
         logs: '日志',
         logsHint: '保留最近 600 行输出。',
         noLogs: '还没有输出。',
+        viewJobLog: '查看日志',
+        copyLog: '复制日志',
+        exportLog: '导出日志',
+        exportedLog: '日志已导出：{path}',
+        exportLogFailed: '导出日志失败。',
+        copiedLog: '日志已复制。',
+        copyLogFailed: '复制日志失败。',
+        jobLogTitle: '任务日志',
+        jobLogTitleForTask: '{task} · 日志',
+        copyTaskLog: '复制日志',
+        exportTaskLog: '导出日志',
+        jobLogEmpty: '这个任务还没有单独日志。',
+        cookieAutoFallback: '手动 Cookie 与部分链接不匹配，已改用按链接自动匹配。',
+        activeJobView: '进行中',
+        finishedJobView: '已完成',
+        issueJobView: '异常',
+        activeJobViewHint: '只保留待开始和正在下载的任务。',
+        finishedJobViewHint: '下载完成的任务会移到这里。',
+        issueJobViewHint: '失败、取消或需要重试的任务会放在这里。',
+        taskNumber: '任务 {index}',
+        postProcessing: '下载到 100%，正在合并或校验',
+        postProcessingShort: '后处理',
+        close: '关闭',
         recentJobs: '最近任务',
         recentJobsHint: '点卡片可回填链接和目录。',
         clearHistory: '清空记录',
@@ -343,15 +369,24 @@ function getText(language: Language) {
         urls: 'URL list',
         urlsPlaceholder: 'One URL per line',
         urlsHint: 'Paste multiple lines at once and they will be split into separate URLs.',
+        linkCheck: 'Link check',
+        linkCheckHint: 'Douyin/TikTok work best with direct video links. Obvious feed or landing-page links are flagged before download.',
         addLink: 'Add link',
         clearLinks: 'Clear links',
         outputFolder: 'Output folder',
         browse: 'Browse',
         openCookiesDir: 'Open cookies folder',
+        openCookieExtension: 'Open extension folder',
+        importCookieZip: 'Import cookie ZIP',
+        importingCookieZip: 'Importing...',
+        cookieImportSuccess: 'Imported {count} cookie file(s).',
+        cookieImportFailed: 'Failed to import cookie ZIP.',
         mode: 'Mode',
         video: 'Video',
         audio: 'Audio',
-        sequentialHint: 'Queue mode has been removed from the UI. Downloads are sequential by default.',
+        sequentialHint: 'Queued in list order; concurrent jobs start from the front of the list.',
+        concurrency: 'Concurrent jobs',
+        concurrencyHint: 'Run up to 3 links at once; lower this to 1 if a site throttles or flags requests.',
         videoPreset: 'Quality policy',
         videoPresetHint: 'Best available by default. Bilibili 4K still depends on the source, login state, and account permissions.',
         best: 'Best available',
@@ -363,16 +398,18 @@ function getText(language: Language) {
         audioQuality: 'Audio quality',
         audioQualityHint: 'Only used in audio mode.',
         cookieFile: 'Auth file',
-        cookieAuto: 'Do not use a cookie file',
-        cookieHint: 'Paste a link first and the app will suggest the right cookie file for Bilibili, YouTube, Youku, and similar sites.',
-        cookieFallback: 'Pick only the target-site cookie file to avoid sending unrelated login state.',
+        cookieAuto: 'Auto match by URL',
+        cookieHint: 'Auto mode is recommended. It matches a site cookie file for each URL; manual selection is best for same-site batches only.',
+        cookieFallback: 'After installing the extension, preview and export a cookie ZIP there, then return here and click “Import cookie ZIP”. Preview does not create cache files.',
+        supportedSitesLink: 'View yt-dlp supported sites',
+        supportedSitesHint: 'Download source coverage follows the official yt-dlp supported sites list. Cookie suggestions only keep the currently steadier services; official extractor support does not guarantee member, captcha, encrypted, or risk-controlled content will download.',
         cookieAdvisor: 'Cookie suggestion',
-        cookieAdvisorIdle: 'Paste a link and the recommended cookie file will appear here.',
+        cookieAdvisorIdle: 'Paste links and this will show which cookie files auto mode will use.',
         cookieAdvisorUse: 'Use suggested cookie',
         cookieAdvisorCurrent: 'The suggested cookie file is selected.',
         cookieAdvisorNone: 'This link does not appear to need a dedicated cookie file. Use one when member access, login state, or 412/403 errors appear.',
-        cookieAdvisorDetected: '{service} link detected. Suggested file: {file}. This keeps unrelated cookies out.',
-        cookieAdvisorMissing: '{service} link detected, but no dedicated cookie file was found. Place the matching by-service file in the auth folder.',
+        cookieAdvisorDetected: '{service} link detected. Auto mode will use {file}. This keeps unrelated cookies out.',
+        cookieAdvisorMissing: '{service} link detected, but no dedicated cookie file was found. Export a ZIP with MediaCookies and import it here.',
         cookieAdvisorMismatch: 'The selected file does not look like a dedicated {service} cookie file.',
         cookieMeta: '{count} cookie(s) · {domains}',
         cookieExpiredWarning: '{count} cookie(s) already expired: {names}. The login session may be stale; export cookies.txt again.',
@@ -393,7 +430,9 @@ function getText(language: Language) {
         queueProgress: 'Queue progress',
         queueProgressHint: 'Aggregate progress includes the live percent from the running job, not just completed items.',
         taskList: 'Task list',
-        taskListHint: 'Each tile is one URL. Finished tasks light up; failed tasks turn red.',
+        taskListHint: 'Only pending and active links stay here.',
+        finishedTaskList: 'Finished / issues',
+        finishedTaskListHint: 'Done, failed, and cancelled tasks move here.',
         taskListIdle: 'Paste links to create task tiles.',
         taskTotal: 'Total',
         liveDownload: 'Live download',
@@ -405,8 +444,10 @@ function getText(language: Language) {
         done: 'Done',
         failed: 'Failed',
         cancelled: 'Cancelled',
-        activeJobs: 'Job progress',
-        activeJobsHint: 'Each card is one URL.',
+        activeJobs: 'Active downloads',
+        activeJobsHint: 'Only running tasks stay here. Finished tasks move below.',
+        finishedJobs: 'Finished / issues',
+        finishedJobsHint: 'Done, failed, or cancelled tasks stay here for log review.',
         downloaded: 'Downloaded',
         total: 'Total',
         eta: 'ETA',
@@ -415,6 +456,29 @@ function getText(language: Language) {
         logs: 'Logs',
         logsHint: 'Keeps the latest 600 lines.',
         noLogs: 'No output yet.',
+        viewJobLog: 'View log',
+        copyLog: 'Copy log',
+        exportLog: 'Export log',
+        exportedLog: 'Log exported: {path}',
+        exportLogFailed: 'Failed to export log.',
+        copiedLog: 'Log copied.',
+        copyLogFailed: 'Failed to copy log.',
+        jobLogTitle: 'Job log',
+        jobLogTitleForTask: '{task} · Log',
+        copyTaskLog: 'Copy log',
+        exportTaskLog: 'Export log',
+        jobLogEmpty: 'No per-job log yet.',
+        cookieAutoFallback: 'Manual cookie did not match every URL, so per-URL auto matching is being used.',
+        activeJobView: 'Active',
+        finishedJobView: 'Done',
+        issueJobView: 'Issues',
+        activeJobViewHint: 'Only pending and active jobs stay here.',
+        finishedJobViewHint: 'Completed jobs move here.',
+        issueJobViewHint: 'Failed, cancelled, or retry-needed jobs stay here.',
+        taskNumber: 'Task {index}',
+        postProcessing: 'Download reached 100%; merging or verifying',
+        postProcessingShort: 'Post',
+        close: 'Close',
         recentJobs: 'Recent jobs',
         recentJobsHint: 'Click a card to refill URLs and folder.',
         clearHistory: 'Clear history',
@@ -437,6 +501,11 @@ function getText(language: Language) {
       }
 }
 
+function normalizeConcurrency(value: unknown): DownloadConcurrency {
+  const parsed = Number(value)
+  return parsed === 1 || parsed === 2 || parsed === 3 ? parsed : DEFAULT_PREFS.concurrency
+}
+
 function readPreferences(): StoredPreferences {
   const parsed = readJsonStorage<Partial<StoredPreferences> & { concurrency?: number; extraArgs?: string; rememberExtraArgs?: boolean }>(STORAGE_KEY, {})
   const enabledExtraPresets = Array.isArray(parsed.enabledExtraPresets)
@@ -457,7 +526,8 @@ function readPreferences(): StoredPreferences {
       )
     : []
   const theme = isTheme(parsed.theme) ? parsed.theme : DEFAULT_PREFS.theme
-  return { ...DEFAULT_PREFS, ...parsed, theme, videoPreset: 'best', enabledExtraPresets }
+  const concurrency = normalizeConcurrency(parsed.concurrency)
+  return { ...DEFAULT_PREFS, ...parsed, theme, videoPreset: 'best', enabledExtraPresets, concurrency }
 }
 
 function readHistory(): HistoryItem[] {
@@ -472,6 +542,7 @@ function readHistory(): HistoryItem[] {
     if (urls.length === 0) return
     normalized.push({
       id: typeof item.id === 'string' && item.id.trim().length > 0 ? item.id : `history-${index}`,
+      title: typeof item.title === 'string' && item.title.trim().length > 0 ? item.title.trim() : urls[0],
       urls,
       mode: item.mode === 'audio' ? 'audio' : 'video',
       outputDir: typeof item.outputDir === 'string' && item.outputDir.trim().length > 0 ? item.outputDir : DEFAULT_PREFS.outputDir,
@@ -496,6 +567,20 @@ function taskTileStatusLabel(status: DownloadStatus | 'pending', text: ReturnTyp
   return statusLabel(status, text)
 }
 
+function getTaskTileText(tile: { status: DownloadStatus | 'pending'; percent: number | null }, text: ReturnType<typeof getText>) {
+  if (tile.status === 'running' && tile.percent !== null && tile.percent >= 99.9) {
+    return text.postProcessingShort
+  }
+  return tile.percent !== null && tile.status === 'running' ? `${tile.percent.toFixed(0)}%` : taskTileStatusLabel(tile.status, text)
+}
+
+function getJobProgressText(job: JobSnapshot, text: ReturnType<typeof getText>) {
+  if (job.status === 'running' && job.percent !== null && job.percent >= 99.9 && !job.outputPath) {
+    return text.postProcessing
+  }
+  return job.percent !== null ? `${job.percent.toFixed(1)}%` : text.waiting
+}
+
 function getCookieTargetName(target: (typeof COOKIE_TARGETS)[number], language: Language) {
   return language === 'zh' ? target.zhName : target.enName
 }
@@ -508,10 +593,126 @@ function cookieSearchText(item: CookieFileInfo) {
   return `${item.label} ${item.path} ${item.domains.join(' ')}`.replace(/\\/g, '/').toLowerCase()
 }
 
-function detectCookieTarget(urls: string[]) {
-  const haystack = urls.join('\n').toLowerCase()
-  if (!haystack) return null
-  return COOKIE_TARGETS.find((target) => target.urlMarkers.some((marker) => haystack.includes(marker))) ?? null
+function detectCookieTargetForUrl(url: string) {
+  const normalized = url.toLowerCase()
+  if (!normalized) return null
+  return COOKIE_TARGETS.find((target) => target.urlMarkers.some((marker) => normalized.includes(marker))) ?? null
+}
+
+function detectCookieTargetsForUrls(urls: string[]) {
+  const targets = new Map<CookieTargetId, (typeof COOKIE_TARGETS)[number]>()
+  urls.forEach((url) => {
+    const target = detectCookieTargetForUrl(url)
+    if (target) {
+      targets.set(target.id, target)
+    }
+  })
+  return [...targets.values()]
+}
+
+function inspectDownloadLink(url: string, language: Language): LinkInspection | null {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+
+  const hostname = parsed.hostname.toLowerCase()
+  const pathname = parsed.pathname.toLowerCase()
+  const isDouyin = hostname === 'douyin.com' || hostname.endsWith('.douyin.com') || hostname === 'iesdouyin.com' || hostname.endsWith('.iesdouyin.com')
+  const isTikTok = hostname === 'tiktok.com' || hostname.endsWith('.tiktok.com')
+
+  if (isDouyin) {
+    const modalId = parsed.searchParams.get('modal_id')?.trim()
+    if (/^\/video\/\d+/.test(pathname)) {
+      return {
+        url,
+        service: 'douyin',
+        severity: 'info',
+        message: language === 'zh'
+          ? '抖音单条视频链接，可以继续。若提示 fresh cookies，请先在同一浏览器打开该视频并重新导出 Cookie。'
+          : 'Douyin direct video link detected. If fresh cookies are requested, open this video in the same browser and export cookies again.',
+      }
+    }
+    if (modalId && /^\d{10,}$/.test(modalId)) {
+      return {
+        url,
+        service: 'douyin',
+        severity: 'warning',
+        message: language === 'zh'
+          ? `抖音弹窗/精选入口会在启动时尝试转成 /video/${modalId}；如果仍失败，请打开作品页后复制具体视频链接。`
+          : `Douyin modal link will be converted to /video/${modalId} before download. If it still fails, open the post page and copy the direct video URL.`,
+      }
+    }
+    return {
+      url,
+      service: 'douyin',
+      severity: 'warning',
+      message: language === 'zh'
+        ? '这个抖音链接看起来不是单条视频页。yt-dlp 官方主要支持 /video/数字ID，推荐先复制具体作品链接。'
+        : 'This Douyin URL does not look like a direct video page. yt-dlp mainly supports /video/{id}; copy the exact post URL first.',
+    }
+  }
+
+  if (isTikTok) {
+    if (pathname.startsWith('/foryou')) {
+      return {
+        url,
+        service: 'tiktok',
+        severity: 'error',
+        message: language === 'zh'
+          ? 'TikTok /foryou 是推荐流入口，不是具体视频。请复制 @用户名/video/数字ID，或 vm.tiktok.com / vt.tiktok.com 分享短链。'
+          : 'TikTok /foryou is a feed, not a target video. Copy an @user/video/{id} URL or a vm.tiktok.com / vt.tiktok.com share link.',
+      }
+    }
+    if (hostname === 'vm.tiktok.com' || hostname === 'vt.tiktok.com' || /^\/t\//.test(pathname)) {
+      return {
+        url,
+        service: 'tiktok',
+        severity: 'info',
+        message: language === 'zh'
+          ? 'TikTok 分享短链，可以继续；如果地区、验证码或 TLS 报错，先在浏览器完成验证或换网络环境。'
+          : 'TikTok share link detected. Continue; if region, captcha, or TLS errors appear, complete browser verification or change network.',
+      }
+    }
+    if (/^\/@[^/]+\/video\/\d+/.test(pathname)) {
+      return {
+        url,
+        service: 'tiktok',
+        severity: 'info',
+        message: language === 'zh'
+          ? 'TikTok 单条视频链接，可以继续。'
+          : 'TikTok direct video link detected.',
+      }
+    }
+    if (/^\/@[^/]+(?:\/live|\/collection\/|$)/.test(pathname)) {
+      return {
+        url,
+        service: 'tiktok',
+        severity: 'warning',
+        message: language === 'zh'
+          ? '这个 TikTok 链接可能是用户页、直播或合集入口。若只想下载一条，请打开目标视频后复制 @用户名/video/数字ID。'
+          : 'This TikTok URL may be a user, live, or collection page. For one item, open the target video and copy @user/video/{id}.',
+      }
+    }
+    return {
+      url,
+      service: 'tiktok',
+      severity: 'warning',
+      message: language === 'zh'
+        ? '这个 TikTok 链接不像官方支持的具体视频/短链。推荐换成 @用户名/video/数字ID 或 vm/vt 分享短链。'
+        : 'This TikTok URL does not look like a supported direct video/share URL. Prefer @user/video/{id} or vm/vt share links.',
+    }
+  }
+
+  return null
+}
+
+function inspectDownloadLinks(urls: string[], language: Language) {
+  return urls
+    .map((url) => inspectDownloadLink(url, language))
+    .filter((item): item is LinkInspection => Boolean(item))
 }
 
 function scoreCookieForTarget(item: CookieFileInfo, target: (typeof COOKIE_TARGETS)[number]) {
@@ -523,6 +724,11 @@ function scoreCookieForTarget(item: CookieFileInfo, target: (typeof COOKIE_TARGE
   const isServiceFile = labelText.includes('by-service/')
   const isDomainFile = labelText.includes('by-domain/')
   const isLikelyRaw = !isServiceFile && !isDomainFile
+  const hasOtherPreferredServiceName = COOKIE_TARGETS
+    .filter((otherTarget) => otherTarget.id !== target.id)
+    .some((otherTarget) => otherTarget.preferredMarkers.some((marker) => labelText.includes(marker)))
+
+  if (hasOtherPreferredServiceName && !hasPreferredName) return 0
 
   if (hasPreferredName && hasRelatedDomain) return 120
   if (hasPreferredName) return 110
@@ -541,6 +747,52 @@ function findRecommendedCookieFile(items: CookieFileInfo[], target: (typeof COOK
     .map((item) => ({ item, score: scoreCookieForTarget(item, target) }))
     .filter(({ score }) => score > 0)
     .sort((left, right) => right.score - left.score || left.item.cookieCount - right.item.cookieCount || left.item.label.localeCompare(right.item.label))[0]?.item ?? null
+}
+
+function cookieFileMatchesTarget(item: CookieFileInfo | null | undefined, target: (typeof COOKIE_TARGETS)[number] | null) {
+  if (!item || !target) {
+    return false
+  }
+  return scoreCookieForTarget(item, target) > 0
+}
+
+function shouldUseManualCookieForUrls(item: CookieFileInfo | null | undefined, urls: string[]) {
+  if (!item) {
+    return false
+  }
+  const detectedTargets = urls
+    .map((url) => detectCookieTargetForUrl(url))
+    .filter((target): target is (typeof COOKIE_TARGETS)[number] => Boolean(target))
+
+  return detectedTargets.length === 0 || detectedTargets.every((target) => cookieFileMatchesTarget(item, target))
+}
+
+function formatTimestampForFile(date = new Date()) {
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
+}
+
+function formatChineseNumber(value: number) {
+  const digits = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九']
+  if (!Number.isFinite(value) || value <= 0 || value >= 100) {
+    return String(value)
+  }
+  if (value < 10) {
+    return digits[value]
+  }
+  if (value === 10) {
+    return '十'
+  }
+  if (value < 20) {
+    return `十${digits[value % 10]}`
+  }
+  const tens = Math.floor(value / 10)
+  const ones = value % 10
+  return ones === 0 ? `${digits[tens]}十` : `${digits[tens]}十${digits[ones]}`
+}
+
+function formatTaskLabel(index: number, language: Language) {
+  return language === 'zh' ? `任务${formatChineseNumber(index)}` : `Task ${index}`
 }
 
 function formatCookieMeta(item: CookieFileInfo, language: Language, text: ReturnType<typeof getText>) {
@@ -568,6 +820,36 @@ function formatCookieHealth(item: CookieFileInfo, language: Language, text: Retu
       .replace('{names}', formatCookieNames(item.expiringSoonCookieNames, language))
   }
   return ''
+}
+
+function summarizeAutoCookieMatches(urls: string[], cookieFiles: CookieFileInfo[]) {
+  const matched = new Map<string, {
+    target: (typeof COOKIE_TARGETS)[number]
+    cookieFile: CookieFileInfo
+    count: number
+  }>()
+  let unmatchedCount = 0
+
+  urls.forEach((url) => {
+    const target = detectCookieTargetForUrl(url)
+    const cookieFile = findRecommendedCookieFile(cookieFiles, target)
+    if (!target || !cookieFile) {
+      unmatchedCount += 1
+      return
+    }
+
+    const current = matched.get(target.id)
+    if (current) {
+      current.count += 1
+    } else {
+      matched.set(target.id, { target, cookieFile, count: 1 })
+    }
+  })
+
+  return {
+    matches: [...matched.values()],
+    unmatchedCount,
+  }
 }
 
 function classifyCookieFile(item: CookieFileInfo, language: Language) {
@@ -683,8 +965,12 @@ function App() {
   const [theme, setTheme] = useState<Theme>(initialPreferences.theme)
   const [cookieFile, setCookieFile] = useState(initialPreferences.cookieFile)
   const [enabledExtraPresets, setEnabledExtraPresets] = useState<ExtraPresetId[]>(initialPreferences.enabledExtraPresets)
+  const [concurrency, setConcurrency] = useState<DownloadConcurrency>(initialPreferences.concurrency)
   const [logs, setLogs] = useState<string[]>([])
-  const [queue, setQueue] = useState<QueueSnapshot>({ total: 0, pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0, concurrency: 1 })
+  const [jobLogs, setJobLogs] = useState<Record<string, string[]>>({})
+  const [selectedLogJobId, setSelectedLogJobId] = useState<string | null>(null)
+  const [jobView, setJobView] = useState<JobView>('active')
+  const [queue, setQueue] = useState<QueueSnapshot>({ total: 0, pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0, concurrency: initialPreferences.concurrency })
   const [jobs, setJobs] = useState<Record<string, JobSnapshot>>({})
   const [jobOrder, setJobOrder] = useState<string[]>([])
   const [status, setStatus] = useState<DownloadStatus>('idle')
@@ -698,6 +984,7 @@ function App() {
   const [updateChecking, setUpdateChecking] = useState(false)
   const [updateDownloading, setUpdateDownloading] = useState(false)
   const [denoInstalling, setDenoInstalling] = useState(false)
+  const [cookieImporting, setCookieImporting] = useState(false)
   const [activeWorkspace, setActiveWorkspace] = useState<ActiveWorkspace>('download')
   const activeQueueSnapshotRef = useRef<ActiveQueueSnapshot>({
     mode: initialPreferences.mode,
@@ -706,13 +993,11 @@ function App() {
   const logViewerRef = useRef<HTMLDivElement | null>(null)
   const text = getText(language)
   const normalizedHeroTitle = text.heroTitle.replace(/[。.]$/, '')
-  const cookiesPluginUrl = 'https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc'
-  const cookiesPluginLabel = language === 'zh' ? '推荐插件：Get cookies.txt LOCALLY' : 'Recommended: Get cookies.txt LOCALLY'
+  const cookiesPluginLabel = language === 'zh' ? '内置插件：MediaCookies' : 'Bundled extension: MediaCookies'
   const cookiesPluginHint =
     language === 'zh'
-      ? '会员或登录态内容建议先用这个浏览器扩展导出 cookies.txt，再放进本项目的 cookies 目录。'
-      : 'For member-only or signed-in content, export a cookies.txt file with this browser extension first, then place it in the project cookies folder.'
-  const cookiesPluginButton = language === 'zh' ? '打开插件页' : 'Open extension page'
+      ? '步骤：打开插件目录 -> 浏览器扩展页打开开发者模式 -> 加载已解压的扩展程序 -> 选择 media-dock-cookie-exporter 文件夹。'
+      : 'Steps: open the extension folder -> enable Developer mode on the browser extensions page -> Load unpacked -> select the media-dock-cookie-exporter folder.'
   const updateSummary = updateInfo
     ? updateInfo.updateAvailable
       ? `${text.updateReady}: ${updateInfo.currentVersion} -> ${updateInfo.latestVersion ?? '--'}`
@@ -770,6 +1055,14 @@ function App() {
       if (event.type === 'log') {
         const prefix = event.jobId ? `[${event.jobId}] ` : ''
         setLogs((current) => [...current, `${prefix}${event.line}`].slice(-600))
+        const jobId = event.jobId
+        if (jobId) {
+          const streamPrefix = event.stream === 'system' ? 'system' : event.stream
+          setJobLogs((current) => ({
+            ...current,
+            [jobId]: [...(current[jobId] ?? []), `[${streamPrefix}] ${event.line}`].slice(-300),
+          }))
+        }
         return
       }
       if (event.type === 'queue') {
@@ -796,6 +1089,7 @@ function App() {
             const queueSnapshot = activeQueueSnapshotRef.current
             const item: HistoryItem = {
               id: `${Date.now()}-${nextJob.jobId}`,
+              title: nextJob.title || nextJob.url,
               urls: [nextJob.url],
               mode: queueSnapshot.mode,
               outputDir: queueSnapshot.outputDir,
@@ -821,9 +1115,9 @@ function App() {
   }, [language])
 
   useEffect(() => {
-    const prefs: StoredPreferences = { outputDir, mode, audioFormat, audioQuality, videoPreset, language, theme, cookieFile, enabledExtraPresets }
+    const prefs: StoredPreferences = { outputDir, mode, audioFormat, audioQuality, videoPreset, language, theme, cookieFile, enabledExtraPresets, concurrency }
     writeJsonStorage(STORAGE_KEY, prefs)
-  }, [audioFormat, audioQuality, cookieFile, enabledExtraPresets, language, mode, outputDir, theme, videoPreset])
+  }, [audioFormat, audioQuality, concurrency, cookieFile, enabledExtraPresets, language, mode, outputDir, theme, videoPreset])
 
   useEffect(() => {
     const container = logViewerRef.current
@@ -843,15 +1137,46 @@ function App() {
         return true
       })
   }, [linkInputs])
-  const cookieTarget = useMemo(() => detectCookieTarget(urls), [urls])
+  const cookieTargets = useMemo(() => detectCookieTargetsForUrls(urls), [urls])
+  const linkInspections = useMemo(() => inspectDownloadLinks(urls, language), [language, urls])
+  const blockingLinkInspections = linkInspections.filter((item) => item.severity === 'error')
+  const cookieTarget = cookieTargets.length === 1 ? cookieTargets[0] : null
   const recommendedCookieFile = useMemo(() => findRecommendedCookieFile(cookieFiles, cookieTarget), [cookieFiles, cookieTarget])
-  const canStart = urls.length > 0 && outputDir.trim().length > 0 && queue.running === 0 && queue.pending === 0
+  const canStart = urls.length > 0 && outputDir.trim().length > 0 && queue.running === 0 && queue.pending === 0 && blockingLinkInspections.length === 0
   const bootstrapError = !appApi ? text.bootstrapError : null
   const effectiveStatus = bootstrapError ? 'error' : status
   const effectiveMessage = bootstrapError ?? statusMessage
   const visibleLogs = bootstrapError ? ['[bootstrap] window.appApi is unavailable'] : logs
   const denoHint = paths?.denoPath ? text.denoReady : text.denoMissing
+  const cookieExtensionPath = paths?.cookieExtensionDir ?? ''
   const sortedJobs = jobOrder.map((jobId) => jobs[jobId]).filter(Boolean)
+  const activeDownloadJobs = sortedJobs.filter((job) => job.status === 'running')
+  const finishedDownloadJobs = sortedJobs.filter((job) => job.status === 'success')
+  const issueDownloadJobs = sortedJobs.filter((job) => job.status === 'error' || job.status === 'cancelled')
+  const selectedLogJob = selectedLogJobId ? jobs[selectedLogJobId] : null
+  const selectedLogLines = selectedLogJobId ? (jobLogs[selectedLogJobId] ?? []) : []
+  const selectedTaskLabel = selectedLogJob ? formatTaskLabel(selectedLogJob.index, language) : text.jobLogTitle
+  const selectedTaskLogTitle = selectedLogJob ? text.jobLogTitleForTask.replace('{task}', selectedTaskLabel) : text.jobLogTitle
+  const selectedCopyLogLabel = selectedLogJob ? text.copyTaskLog.replace('{task}', selectedTaskLabel) : text.copyLog
+  const selectedExportLogLabel = selectedLogJob ? text.exportTaskLog.replace('{task}', selectedTaskLabel) : text.exportLog
+  const selectedLogExportText = selectedLogJob
+    ? [
+        `# ${selectedTaskLogTitle}`,
+        language === 'zh'
+          ? `${selectedTaskLabel}：${selectedLogJob.title || selectedLogJob.url}`
+          : `${selectedTaskLabel}: ${selectedLogJob.title || selectedLogJob.url}`,
+        `${language === 'zh' ? '序号' : 'Index'}: ${selectedLogJob.index}/${selectedLogJob.totalJobs}`,
+        `${text.status}: ${statusLabel(selectedLogJob.status, text)}`,
+        `${language === 'zh' ? '进度' : 'Progress'}: ${selectedLogJob.percent !== null ? `${selectedLogJob.percent.toFixed(1)}%` : text.waiting}`,
+        selectedLogJob.exitCode !== undefined ? `${language === 'zh' ? '退出码' : 'Exit code'}: ${selectedLogJob.exitCode ?? 'unknown'}` : '',
+        `${language === 'zh' ? '链接' : 'URL'}: ${selectedLogJob.url}`,
+        selectedLogJob.outputPath ? `${language === 'zh' ? '输出文件' : 'Output file'}: ${selectedLogJob.outputPath}` : '',
+        selectedLogJob.command ? `${text.currentCommand}:\n> ${selectedLogJob.command}` : '',
+        '',
+        `[${text.logs}]`,
+        ...selectedLogLines,
+      ].filter(Boolean).join('\n')
+    : selectedLogLines.join('\n')
   const aggregateProgressPercent = useMemo(() => {
     if (queue.total <= 0) {
       return 0
@@ -869,10 +1194,6 @@ function App() {
 
     return Math.min(100, Math.max(0, processedUnits / queue.total))
   }, [queue.total, sortedJobs])
-  const liveJob = useMemo(
-    () => [...sortedJobs].reverse().find((job) => job.status === 'running') ?? null,
-    [sortedJobs],
-  )
   const taskTiles = useMemo(() => {
     const total = Math.max(queue.total, urls.length)
     return Array.from({ length: total }, (_, index) => {
@@ -887,18 +1208,42 @@ function App() {
       }
     })
   }, [queue.total, sortedJobs, urls])
-  const taskTilesDone = taskTiles.filter((tile) => tile.status === 'success').length
+  const activeTaskTiles = taskTiles.filter((tile) => tile.status === 'pending' || tile.status === 'running')
+  const finishedTaskTiles = taskTiles.filter((tile) => tile.status === 'success')
+  const issueTaskTiles = taskTiles.filter((tile) => tile.status === 'error' || tile.status === 'cancelled')
+  const currentTaskTiles = jobView === 'active' ? activeTaskTiles : jobView === 'finished' ? finishedTaskTiles : issueTaskTiles
+  const currentDownloadJobs = jobView === 'active' ? activeDownloadJobs : jobView === 'finished' ? finishedDownloadJobs : issueDownloadJobs
+  const currentJobViewTitle = jobView === 'active' ? text.activeJobView : jobView === 'finished' ? text.finishedJobView : text.issueJobView
+  const currentJobViewHint = jobView === 'active' ? text.activeJobViewHint : jobView === 'finished' ? text.finishedJobViewHint : text.issueJobViewHint
+  const currentJobViewCount = jobView === 'active' ? queue.running + queue.pending : jobView === 'finished' ? queue.completed : queue.failed + queue.cancelled
   const aggregateProgressLabel = queue.total > 0 ? `${aggregateProgressPercent.toFixed(1)}%` : text.waiting
   const combinedExtraArgs = mergeExtraArgs(enabledExtraPresets)
+  const autoCookieFiles = useMemo(
+    () => urls.map((url) => findRecommendedCookieFile(cookieFiles, detectCookieTargetForUrl(url))?.path ?? null),
+    [cookieFiles, urls],
+  )
+  const autoCookieSummary = useMemo(() => summarizeAutoCookieMatches(urls, cookieFiles), [cookieFiles, urls])
   const selectedCookieMeta = cookieFile ? cookieFiles.find((item) => item.path === cookieFile) : null
+  const manualCookieAppliesToUrls = useMemo(
+    () => shouldUseManualCookieForUrls(selectedCookieMeta, urls),
+    [selectedCookieMeta, urls],
+  )
   const selectedCookieScore = cookieTarget && selectedCookieMeta ? scoreCookieForTarget(selectedCookieMeta, cookieTarget) : 0
   const cookieTargetName = cookieTarget ? getCookieTargetName(cookieTarget, language) : ''
-  const cookieAdvisorMessage = cookieTarget
-    ? recommendedCookieFile
-      ? text.cookieAdvisorDetected
-          .replace('{service}', cookieTargetName)
-          .replace('{file}', classifyCookieFile(recommendedCookieFile, language).label)
-      : text.cookieAdvisorMissing.replace('{service}', cookieTargetName)
+  const cookieAdvisorMessage = cookieFile && selectedCookieMeta
+    ? language === 'zh'
+      ? `已手动选择 ${classifyCookieFile(selectedCookieMeta, language).label}，所有链接都会使用这一个 Cookie 文件。`
+      : `Manual file selected: ${classifyCookieFile(selectedCookieMeta, language).label}. Every URL will use this cookie file.`
+    : autoCookieSummary.matches.length > 0
+      ? language === 'zh'
+        ? `自动模式会按链接分别使用：${autoCookieSummary.matches.map((match) => `${getCookieTargetName(match.target, language)} x${match.count}`).join('，')}${autoCookieSummary.unmatchedCount > 0 ? `；另有 ${autoCookieSummary.unmatchedCount} 条链接暂未匹配到专用 Cookie` : ''}。`
+        : `Auto mode will use per-URL cookies for: ${autoCookieSummary.matches.map((match) => `${getCookieTargetName(match.target, language)} x${match.count}`).join(', ')}${autoCookieSummary.unmatchedCount > 0 ? `; ${autoCookieSummary.unmatchedCount} URL(s) have no dedicated cookie match yet` : ''}.`
+      : cookieTarget
+        ? recommendedCookieFile
+          ? text.cookieAdvisorDetected
+              .replace('{service}', cookieTargetName)
+              .replace('{file}', classifyCookieFile(recommendedCookieFile, language).label)
+          : text.cookieAdvisorMissing.replace('{service}', cookieTargetName)
     : urls.length > 0
       ? text.cookieAdvisorNone
       : text.cookieAdvisorIdle
@@ -912,6 +1257,15 @@ function App() {
     : text.cookieHint
   const recommendedCookieHealth = recommendedCookieFile ? formatCookieHealth(recommendedCookieFile, language, text) : ''
   const canClearLinks = linkInputs.some((item) => item.trim().length > 0) || linkInputs.length > 1
+
+  useEffect(() => {
+    if (!cookieFile || urls.length === 0 || !selectedCookieMeta) {
+      return
+    }
+    if (!manualCookieAppliesToUrls) {
+      setCookieFile('')
+    }
+  }, [cookieFile, manualCookieAppliesToUrls, selectedCookieMeta, urls.length])
 
   async function refreshRuntimeState() {
     if (!appApi) return
@@ -1012,12 +1366,56 @@ function App() {
     }
   }
 
+  async function handleImportCookieZip() {
+    if (!appApi) return
+
+    setCookieImporting(true)
+    try {
+      const result = await appApi.importCookieZip()
+      if (!result) {
+        return
+      }
+
+      const sortedCookies = sortCookieFiles(result.cookieFiles, language)
+      setCookieFiles(sortedCookies)
+      if (cookieFile && !result.cookieFiles.some((item) => item.path === cookieFile)) {
+        setCookieFile('')
+      }
+      setStatus('success')
+      setStatusMessage(text.cookieImportSuccess.replace('{count}', String(result.importedFiles.length)))
+      setLogs((current) => [
+        ...current,
+        `[cookies] imported ${result.importedFiles.length} file(s) -> ${result.importedDir}`,
+      ].slice(-600))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : text.cookieImportFailed
+      setStatus('error')
+      setStatusMessage(`${text.cookieImportFailed} ${message}`)
+      setLogs((current) => [...current, `[cookies] ${message}`].slice(-600))
+    } finally {
+      setCookieImporting(false)
+    }
+  }
+
   async function handlePickFolder() {
     const folder = await appApi.pickDirectory(outputDir)
     if (folder) setOutputDir(folder)
   }
 
   async function handleStartDownload() {
+    if (blockingLinkInspections.length > 0) {
+      const message = blockingLinkInspections[0].message
+      setStatus('error')
+      setStatusMessage(message)
+      setLogs((current) => [...current, `[ui] ${message}`].slice(-600))
+      return
+    }
+
+    const shouldUseManualCookie = Boolean(cookieFile && shouldUseManualCookieForUrls(selectedCookieMeta, urls))
+    const shouldAutoFallbackCookie = Boolean(cookieFile && !shouldUseManualCookie)
+    const effectiveCookieFile = shouldUseManualCookie ? cookieFile : null
+    const effectiveUrlCookieFiles = autoCookieFiles
+    const initialLogs = shouldAutoFallbackCookie ? [`[ui] ${text.cookieAutoFallback}`] : []
     setLogs([])
     setJobs({})
     setJobOrder([])
@@ -1026,9 +1424,15 @@ function App() {
       mode,
       outputDir,
     }
-    setQueue({ total: urls.length, pending: urls.length, running: 0, completed: 0, failed: 0, cancelled: 0, concurrency: 1 })
+    setQueue({ total: urls.length, pending: urls.length, running: 0, completed: 0, failed: 0, cancelled: 0, concurrency })
+    setJobLogs({})
+    setSelectedLogJobId(null)
+    setJobView('active')
     setStatus('running')
-    setStatusMessage(text.queuePrepared.replace('{count}', String(urls.length)))
+    setStatusMessage(shouldAutoFallbackCookie ? text.cookieAutoFallback : text.queuePrepared.replace('{count}', String(urls.length)))
+    if (initialLogs.length > 0) {
+      setLogs(initialLogs)
+    }
     try {
       await appApi.startDownload({
         urls,
@@ -1038,8 +1442,9 @@ function App() {
         audioQuality,
         videoPreset,
         extraArgs: combinedExtraArgs,
-        cookieFile: cookieFile || null,
-        concurrency: 1,
+        cookieFile: effectiveCookieFile,
+        urlCookieFiles: effectiveUrlCookieFiles,
+        concurrency,
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to start queue.'
@@ -1047,6 +1452,72 @@ function App() {
       setStatusMessage(message)
       setLogs((current) => [...current, `[ui] ${message}`])
     }
+  }
+
+  async function copySelectedJobLog() {
+    if (!selectedLogExportText.trim()) {
+      setStatusMessage(text.jobLogEmpty)
+      return
+    }
+
+    try {
+      const copied = await appApi.copyText(selectedLogExportText)
+      setStatusMessage(copied ? text.copiedLog : text.copyLogFailed)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : text.copyLogFailed
+      setStatusMessage(message || text.copyLogFailed)
+    }
+  }
+
+  async function exportTextLog(defaultName: string, content: string) {
+    const trimmedContent = content.trim()
+    if (!trimmedContent) {
+      setStatusMessage(text.jobLogEmpty)
+      return
+    }
+
+    try {
+      const savedPath = await appApi.exportTextLog(defaultName, trimmedContent)
+      if (savedPath) {
+        setStatusMessage(text.exportedLog.replace('{path}', savedPath))
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : text.exportLogFailed
+      setStatusMessage(message || text.exportLogFailed)
+    }
+  }
+
+  function buildAllLogsExportText() {
+    const header = [
+      `Media Dock ${text.logs}`,
+      new Date().toISOString(),
+      `${text.status}: ${statusLabel(effectiveStatus, text)} · ${effectiveMessage}`,
+      `${text.queueProgress}: ${aggregateProgressLabel} · ${text.taskTotal}: ${queue.total} · ${text.running}: ${queue.running} · ${text.done}: ${queue.completed} · ${text.failed}: ${queue.failed} · ${text.cancelled}: ${queue.cancelled}`,
+      activeCommand ? `${text.currentCommand}: ${activeCommand}` : '',
+    ].filter(Boolean)
+    const jobsText = sortedJobs.length > 0
+      ? [
+          '',
+          `[${text.taskList}]`,
+          ...sortedJobs.map((job) => {
+            const taskLabel = formatTaskLabel(job.index, language)
+            return language === 'zh'
+              ? `${taskLabel}：${statusLabel(job.status, text)} · ${job.title || job.url}`
+              : `${taskLabel}: ${statusLabel(job.status, text)} · ${job.title || job.url}`
+          }),
+        ]
+      : []
+    const logText = visibleLogs.length > 0 ? ['', `[${text.logs}]`, ...visibleLogs] : ['', `[${text.logs}]`, text.noLogs]
+    return [...header, ...jobsText, ...logText].join('\n')
+  }
+
+  async function exportAllLogs() {
+    await exportTextLog(`media-dock-logs-${formatTimestampForFile()}.txt`, buildAllLogsExportText())
+  }
+
+  async function exportSelectedJobLog() {
+    const jobIndex = selectedLogJob?.index ? `task-${String(selectedLogJob.index).padStart(2, '0')}` : 'task'
+    await exportTextLog(`media-dock-${jobIndex}-log-${formatTimestampForFile()}.txt`, selectedLogExportText)
   }
 
   function updateLinkInput(index: number, value: string) {
@@ -1081,6 +1552,7 @@ function App() {
 
   function clearLinkInputs() {
     setLinkInputs([''])
+    setCookieFile('')
   }
 
   function togglePreset(preset: ExtraPresetId) {
@@ -1097,6 +1569,7 @@ function App() {
       language,
       theme,
       enabledExtraPresets,
+      concurrency,
     }
     const savedPath = await appApi.exportConfig(config)
     if (savedPath) {
@@ -1115,6 +1588,7 @@ function App() {
     setVideoPreset('best')
     if (data.language === 'zh' || data.language === 'en') setLanguage(data.language)
     if (isTheme(data.theme)) setTheme(data.theme)
+    setConcurrency(normalizeConcurrency(data.concurrency))
     if (Array.isArray(data.enabledExtraPresets)) {
       setEnabledExtraPresets(
         data.enabledExtraPresets.filter(
@@ -1295,6 +1769,22 @@ function App() {
               ))}
             </div>
             <small className="field-help">{text.urlsHint}</small>
+            {linkInspections.length > 0 ? (
+              <div className="link-advisor">
+                <div className="link-advisor__title">
+                  <span>{text.linkCheck}</span>
+                  <small>{text.linkCheckHint}</small>
+                </div>
+                <div className="link-advisor__items">
+                  {linkInspections.map((item, index) => (
+                    <div className={`link-advisor__item link-advisor__item--${item.severity}`} key={`${item.url}-${index}`}>
+                      <strong>{index + 1}</strong>
+                      <p>{item.message}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div className="section-actions">
               <button className="ghost-button ghost-button--small" type="button" onClick={addLinkInput}>
                 + {text.addLink}
@@ -1349,6 +1839,19 @@ function App() {
               </div>
             )}
           </div>
+          <label className="field concurrency-field">
+            <span>{text.concurrency}</span>
+            <select
+              value={concurrency}
+              disabled={queue.running > 0 || queue.pending > 0}
+              onChange={(event) => setConcurrency(normalizeConcurrency(event.target.value))}
+            >
+              <option value={1}>1</option>
+              <option value={2}>2</option>
+              <option value={3}>3</option>
+            </select>
+            <small className="field-help">{text.concurrencyHint}</small>
+          </label>
           <div className="field-grid field-grid--2">
             <label className="field">
               <span>{text.cookieFile}</span>
@@ -1364,12 +1867,23 @@ function App() {
             <label className="field field--button">
               <span>Cookies</span>
               <div className="cookie-helper-actions">
+                <button className="ghost-button ghost-button--full" type="button" disabled={!cookieExtensionPath} onClick={() => void appApi.openPath(cookieExtensionPath)}>{text.openCookieExtension}</button>
+                <button className="ghost-button ghost-button--full" type="button" disabled={cookieImporting} onClick={() => void handleImportCookieZip()}>{cookieImporting ? text.importingCookieZip : text.importCookieZip}</button>
                 <button className="ghost-button ghost-button--full" type="button" onClick={() => void appApi.openPath(paths?.cookiesDir ?? '')}>{text.openCookiesDir}</button>
-                <button className="ghost-button ghost-button--full" type="button" onClick={() => void appApi.openExternal(cookiesPluginUrl)}>{cookiesPluginButton}</button>
               </div>
               <small className="field-help">{cookiesPluginLabel}</small>
               <small className="field-help">{cookiesPluginHint}</small>
               <small className="field-help">{text.cookieFallback}</small>
+              <div className="supported-sites-link">
+                <button
+                  className="link-button"
+                  type="button"
+                  onClick={() => void appApi.openExternal(YT_DLP_SUPPORTED_SITES_URL)}
+                >
+                  {text.supportedSitesLink}
+                </button>
+                <small className="field-help">{text.supportedSitesHint}</small>
+              </div>
             </label>
           </div>
           <div className={[
@@ -1416,67 +1930,77 @@ function App() {
                 <div className="progress-bar"><div className="progress-bar__fill" style={{ width: `${queue.total > 0 ? aggregateProgressPercent : 0}%` }} /></div>
                 <div className="progress-meta progress-meta--wrap"><span>{text.pending}: {queue.pending}</span><span>{text.running}: {queue.running}</span><span>{text.done}: {queue.completed}</span><span>{text.failed}: {queue.failed}</span><span>{text.cancelled}: {queue.cancelled}</span></div>
               </div>
-              <div className="task-map">
+              <div className="job-view-tabs segmented" role="tablist" aria-label={text.taskList}>
+                <button className={`segmented__item ${jobView === 'active' ? 'active' : ''}`} type="button" onClick={() => setJobView('active')}>
+                  {text.activeJobView}<span>{queue.pending + queue.running}</span>
+                </button>
+                <button className={`segmented__item ${jobView === 'finished' ? 'active' : ''}`} type="button" onClick={() => setJobView('finished')}>
+                  {text.finishedJobView}<span>{queue.completed}</span>
+                </button>
+                <button className={`segmented__item ${jobView === 'issues' ? 'active' : ''}`} type="button" onClick={() => setJobView('issues')}>
+                  {text.issueJobView}<span>{queue.failed + queue.cancelled}</span>
+                </button>
+              </div>
+              <div className={`task-map task-map--${jobView}`}>
                 <div className="task-map__header">
                   <div>
-                    <strong>{text.taskList}</strong>
-                    <small>{text.taskListHint}</small>
+                    <strong>{currentJobViewTitle}</strong>
+                    <small>{currentJobViewHint}</small>
                   </div>
-                  <span>{text.taskTotal}: {taskTiles.length} · {text.done}: {taskTilesDone}</span>
+                  <span>{text.taskTotal}: {taskTiles.length} · {currentJobViewTitle}: {currentJobViewCount}</span>
                 </div>
-                {taskTiles.length > 0 ? (
-                  <div className="task-map__grid" aria-label={text.taskList}>
-                    {taskTiles.map((tile) => (
-                      <div
+                {currentTaskTiles.length > 0 ? (
+                  <div className="task-map__grid" aria-label={currentJobViewTitle}>
+                    {currentTaskTiles.map((tile) => (
+                      <button
                         className={`task-tile task-tile--${tile.status}`}
-                        key={`task-tile-${tile.index}`}
+                        key={`${jobView}-task-tile-${tile.index}`}
                         title={`${tile.index}. ${tile.title || taskTileStatusLabel(tile.status, text)} · ${taskTileStatusLabel(tile.status, text)}`}
+                        type="button"
+                        disabled={!sortedJobs.find((item) => item.index === tile.index)}
+                        onClick={() => {
+                          const job = sortedJobs.find((item) => item.index === tile.index)
+                          if (job) setSelectedLogJobId(job.jobId)
+                        }}
                       >
                         <strong>{tile.index}</strong>
-                        <span>{tile.percent !== null && tile.status === 'running' ? `${tile.percent.toFixed(0)}%` : taskTileStatusLabel(tile.status, text)}</span>
-                      </div>
+                        <span>{getTaskTileText(tile, text)}</span>
+                      </button>
                     ))}
                   </div>
                 ) : (
-                  <div className="job-empty job-empty--compact">{text.taskListIdle}</div>
-                )}
-              </div>
-              <div className="progress-shell progress-shell--focus">
-                <div className="progress-shell__header"><strong>{text.liveDownload}</strong><span>{liveJob ? statusLabel(liveJob.status, text) : text.waiting}</span></div>
-                {liveJob ? (
-                  <>
-                    <div className="progress-focus__title"><strong>{liveJob.title}</strong><span>{liveJob.percent !== null ? `${liveJob.percent.toFixed(1)}%` : text.waiting}</span></div>
-                    <div className="progress-bar progress-bar--small"><div className="progress-bar__fill" style={{ width: `${liveJob.percent === null ? 0 : clampPercent(liveJob.percent)}%` }} /></div>
-                    <div className="progress-meta progress-meta--wrap"><span>{text.downloaded}: {liveJob.downloaded}</span><span>{text.total}: {liveJob.total}</span><span>{text.eta}: {liveJob.eta}</span><span>{liveJob.speed}</span></div>
-                  </>
-                ) : (
-                  <div className="job-empty job-empty--compact">{text.liveDownloadIdle}</div>
+                  <div className="job-empty job-empty--compact">{jobView === 'active' ? text.taskListIdle : currentJobViewHint}</div>
                 )}
               </div>
             </div>
-            {sortedJobs.length > 0 ? (
-              <div className="job-grid">
-                <div className="section-title section-title--tight"><span>{text.activeJobs}</span><small>{text.activeJobsHint}</small></div>
-                {sortedJobs.map((job) => (
-                  <div className="job-card" key={job.jobId}>
-                    <div className="job-card__header"><strong>{job.title}</strong><span>{statusLabel(job.status, text)}</span></div>
+            <div className={`job-grid job-grid--${jobView}`}>
+              <div className="section-title section-title--tight"><span>{currentJobViewTitle}</span><small>{currentJobViewHint}</small></div>
+              {currentDownloadJobs.length > 0 ? (
+                currentDownloadJobs.map((job) => (
+                  <div className={`job-card job-card--${job.status}`} key={job.jobId}>
+                    <div className="job-card__header">
+                      <div className="job-card__title">
+                        <span className="job-card__index">{text.taskNumber.replace('{index}', String(job.index))}</span>
+                        <strong>{job.title}</strong>
+                      </div>
+                      <span>{statusLabel(job.status, text)}</span>
+                    </div>
                     <p className="job-card__url">{job.url}</p>
                     <div className="progress-bar progress-bar--small"><div className="progress-bar__fill" style={{ width: `${job.percent === null ? 0 : clampPercent(job.percent)}%` }} /></div>
-                    <div className="progress-meta progress-meta--wrap"><span>{job.percent !== null ? `${job.percent.toFixed(1)}%` : text.waiting}</span><span>{text.downloaded}: {job.downloaded}</span><span>{text.total}: {job.total}</span><span>{text.eta}: {job.eta}</span><span>{job.speed}</span></div>
+                    <div className="progress-meta progress-meta--wrap"><span>{getJobProgressText(job, text)}</span><span>{text.downloaded}: {job.downloaded}</span><span>{text.total}: {job.total}</span><span>{text.eta}: {job.eta}</span><span>{job.speed}</span></div>
+                    <button className="ghost-button ghost-button--full" type="button" onClick={() => setSelectedLogJobId(job.jobId)}>{text.viewJobLog}</button>
                     {job.outputPath ? <button className="ghost-button ghost-button--full" type="button" onClick={() => void appApi.showItemInFolder(job.outputPath ?? '')}>{text.openFile}</button> : null}
                   </div>
-                ))}
-              </div>
-            ) : null}
+                ))
+              ) : (
+                <div className="job-empty job-empty--compact">{currentJobViewHint}</div>
+              )}
+            </div>
             {activeCommand ? (
               <div className="telemetry-meta-grid">
                 <div className="command-box"><span>{text.currentCommand}</span><code>{activeCommand}</code></div>
               </div>
             ) : null}
-          </section>
-          <section className="panel logs">
-            <div className="section-title"><span>{text.logs}</span><small>{text.logsHint}</small></div>
-            <div className="log-viewer" ref={logViewerRef}>{visibleLogs.length === 0 ? <div className="log-placeholder">{text.noLogs}</div> : visibleLogs.map((line, index) => <div className="log-line" key={`${line}-${index}`}>{line}</div>)}</div>
           </section>
           <section className="panel history">
             <div className="section-title"><span>{text.recentJobs}</span><div className="section-actions"><small>{text.recentJobsHint}</small><button className="ghost-button ghost-button--small" type="button" onClick={() => { setHistory([]); removeStorageItem(HISTORY_KEY) }}>{text.clearHistory}</button></div></div>
@@ -1484,7 +2008,7 @@ function App() {
               {history.length === 0 ? <div className="history-empty">{text.noHistory}</div> : history.map((item) => (
                 <button className="history-item" key={item.id} type="button" onClick={() => { setLinkInputs(Array.isArray(item.urls) && item.urls.length > 0 ? item.urls : ['']); setOutputDir(item.outputDir); setMode(item.mode); setStatusMessage(text.copiedFromHistory) }}>
                   <div className="history-item__content">
-                    <strong>{item.mode === 'audio' ? text.audioExtract : text.videoDownload}</strong>
+                    <strong>{item.title || (item.mode === 'audio' ? text.audioExtract : text.videoDownload)}</strong>
                     <p>{(Array.isArray(item.urls) ? item.urls : []).join(' | ')}</p>
                   </div>
                   <div className={`history-badge history-badge--${item.status}`}>{statusLabel(item.status, text)}</div>
@@ -1492,9 +2016,52 @@ function App() {
               ))}
             </div>
           </section>
+          <section className="panel logs">
+            <div className="section-title">
+              <span>{text.logs}</span>
+              <div className="section-actions">
+                <small>{text.logsHint}</small>
+                <button className="ghost-button ghost-button--small" type="button" onClick={() => void exportAllLogs()}>{text.exportLog}</button>
+              </div>
+            </div>
+            <div className="log-viewer" ref={logViewerRef}>{visibleLogs.length === 0 ? <div className="log-placeholder">{text.noLogs}</div> : visibleLogs.map((line, index) => <div className="log-line" key={`${line}-${index}`}>{line}</div>)}</div>
+          </section>
         </aside>
       </main>
       )}
+      {selectedLogJobId ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setSelectedLogJobId(null)}>
+          <section className="job-log-modal" role="dialog" aria-modal="true" aria-label={selectedTaskLogTitle} onClick={(event) => event.stopPropagation()}>
+            <div className="section-title">
+              <div>
+                <span>{selectedTaskLogTitle}</span>
+                <small>{selectedLogJob?.title || selectedLogJob?.url || selectedLogJobId}</small>
+              </div>
+              <div className="section-actions">
+                <button className="ghost-button ghost-button--small" type="button" onClick={() => void copySelectedJobLog()}>{selectedCopyLogLabel}</button>
+                <button className="ghost-button ghost-button--small" type="button" onClick={() => void exportSelectedJobLog()}>{selectedExportLogLabel}</button>
+                <button className="ghost-button ghost-button--small" type="button" onClick={() => setSelectedLogJobId(null)}>{text.close}</button>
+              </div>
+            </div>
+            <div className="job-log-meta">
+              {selectedLogJob ? (
+                <>
+                  <span>{statusLabel(selectedLogJob.status, text)}</span>
+                  <span>{selectedLogJob.percent !== null ? `${selectedLogJob.percent.toFixed(1)}%` : text.waiting}</span>
+                  {selectedLogJob.exitCode !== undefined ? <span>exit: {selectedLogJob.exitCode ?? 'unknown'}</span> : null}
+                </>
+              ) : null}
+            </div>
+            <div className="job-log-viewer">
+              {selectedLogLines.length === 0 ? (
+                <div className="log-placeholder">{text.jobLogEmpty}</div>
+              ) : selectedLogLines.map((line, index) => (
+                <div className="log-line" key={`${selectedLogJobId}-${index}-${line}`}>{line}</div>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   )
 }

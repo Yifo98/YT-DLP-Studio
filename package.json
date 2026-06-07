@@ -1,7 +1,7 @@
 {
   "name": "media-dock",
   "private": true,
-  "version": "2.0.4",
+  "version": "2.0.11",
   "type": "module",
   "main": "dist-electron/main.js",
   "description": "A compact local media download and processing desktop app.",
@@ -20,6 +20,8 @@
     "preview": "vite preview",
     "start": "electron .",
     "launch:mac": "zsh scripts/launch-mac.sh",
+    "extension:build": "node browser-extension/media-dock-cookie-exporter/scripts/build.mjs",
+    "extension:pack": "node browser-extension/media-dock-cookie-exporter/scripts/build.mjs && node browser-extension/media-dock-cookie-exporter/scripts/package.mjs",
     "dist": "npm run build && electron-builder",
     "dist:mac": "zsh scripts/build-mac-share.sh",
     "dist:win": "zsh scripts/build-win-share.sh",

@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "XF MediaCookies",
+  "short_name": "XF Cookies",
+  "version": "0.1.7",
+  "description": "Export selected site cookies in Media Dock compatible cookies.txt packages. No password export, no network upload.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "XF MediaCookies",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "permissions": [
+    "cookies",
+    "downloads",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://bilibili.com/*",
+    "https://*.bilibili.com/*",
+    "https://bilibili.cn/*",
+    "https://*.bilibili.cn/*",
+    "https://biligame.com/*",
+    "https://*.biligame.com/*",
+    "https://youtube.com/*",
+    "https://*.youtube.com/*",
+    "https://google.com/*",
+    "https://*.google.com/*",
+    "https://accounts.google.com/*",
+    "https://douyin.com/*",
+    "https://*.douyin.com/*",
+    "https://tiktok.com/*",
+    "https://*.tiktok.com/*"
+  ],
+  "optional_host_permissions": [
+    "<all_urls>"
+  ]
+}

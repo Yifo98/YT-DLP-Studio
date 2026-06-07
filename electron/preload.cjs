@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 const appApi = {
   getPaths: () => ipcRenderer.invoke('paths:get'),
   listCookieFiles: () => ipcRenderer.invoke('cookies:list'),
+  importCookieZip: () => ipcRenderer.invoke('cookies:importZip'),
   getSelfCheck: () => ipcRenderer.invoke('self-check:get'),
   checkForUpdates: () => ipcRenderer.invoke('updates:check'),
   downloadLatestUpdate: () => ipcRenderer.invoke('updates:downloadLatest'),
@@ -29,6 +30,8 @@ const appApi = {
   openPath: (targetPath) => ipcRenderer.invoke('shell:openPath', targetPath),
   showItemInFolder: (targetPath) => ipcRenderer.invoke('shell:showItemInFolder', targetPath),
   openExternal: (targetUrl) => ipcRenderer.invoke('shell:openExternal', targetUrl),
+  copyText: (text) => ipcRenderer.invoke('clipboard:writeText', text),
+  exportTextLog: (defaultName, content) => ipcRenderer.invoke('logs:exportText', { defaultName, content }),
   onDownloadUpdate: (listener) => {
     const wrapped = (_event, payload) => listener(payload)
     ipcRenderer.on('download:update', wrapped)

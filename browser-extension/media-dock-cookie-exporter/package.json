@@ -1,0 +1,12 @@
+{
+  "name": "media-dock-cookie-exporter",
+  "private": true,
+  "version": "0.1.7",
+  "type": "module",
+  "description": "Chrome extension for exporting selected site cookies in Media Dock compatible format.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "pack": "node scripts/build.mjs && node scripts/package.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

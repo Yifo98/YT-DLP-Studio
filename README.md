@@ -104,11 +104,15 @@ npm run version:major
 
 ## Cookies 推荐
 
-如果目标站点需要登录态或会员权限，推荐先在浏览器导出 `cookies.txt` 再放进同级 `Media Dock Data/cookies/` 目录。
+如果目标站点需要登录态或会员权限，推荐先用内置浏览器扩展导出 Cookie ZIP，再在主界面 Cookies 区点击“导入 Cookie ZIP”。手动整理时，也可以把导出的文件夹放进同级 `Media Dock Data/cookies/` 目录。
 
-推荐浏览器扩展：
+推荐使用本项目自带的 Chrome 扩展：
 
-- [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
+- `browser-extension/media-dock-cookie-exporter`
+- 构建：`npm run extension:build`
+- 打包商店 ZIP：`npm run extension:pack`
+
+这个扩展只导出用户选择的 Cookie，不读取密码，不上传网络。遇到登录态或会员内容时，建议先在同一个浏览器确认账号状态和目标内容可访问，再预览是否缺少关键登录标记。插件默认会先按 [yt-dlp 官方 supported sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) 筛出当前浏览器里可能用于下载的 Cookie 来源；用户也可以主动切换到“全部 Cookie”高级模式。官方支持列表代表 extractor 存在，不等于所有链接都稳定可下，仍可能受站点加密、会员权限、验证码和风控影响。
 
 ## Windows 首次运行提示
 
@@ -234,11 +238,15 @@ npm run version:major
 
 ## Cookies Recommendation
 
-If a target site requires a signed-in or member session, export `cookies.txt` from your browser and place it into the sibling `Media Dock Data/cookies/` directory first.
+If a target site requires a signed-in or member session, export a cookie ZIP with the bundled browser extension, then import it from the Cookies area in the main UI. Manual imports can still be placed in the sibling `Media Dock Data/cookies/` directory.
 
-Recommended browser extension:
+Recommended bundled Chrome extension:
 
-- [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
+- `browser-extension/media-dock-cookie-exporter`
+- Build: `npm run extension:build`
+- Package Chrome Web Store ZIP: `npm run extension:pack`
+
+The extension exports only user-selected cookies. It does not read passwords or upload data. For signed-in or member-only content, confirm the account state and target content in the same browser profile before previewing key login markers. By default, the extension filters the browser cookie list against the [official yt-dlp supported sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md); users can explicitly switch to an advanced all-cookie mode. yt-dlp listing support does not guarantee every URL will download successfully.
 
 ## Windows First-Run Note
 

@@ -17,6 +17,8 @@ ARCH_NAME="$(uname -m)"
 YTDLP_CHANNEL="${YTDLP_CHANNEL:-nightly}"
 YTDLP_VERSION="${YTDLP_VERSION:-}"
 DENO_VERSION="${DENO_VERSION:-2.7.5}"
+COOKIE_EXTENSION_DIST_DIR="$PROJECT_ROOT/browser-extension/media-dock-cookie-exporter/dist"
+COOKIE_EXTENSION_RELEASE_DIR="$RELEASE_DIR/extensions"
 
 case "$ARCH_NAME" in
   arm64)
@@ -34,7 +36,7 @@ case "$ARCH_NAME" in
 esac
 
 DENO_URL="https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/${DENO_ARCHIVE_NAME}"
-ZIP_PRIVACY_PATTERN='cookie|history|config\.json|user[- ]data|electron-session|electron-user-data|subtitle-cleanup-config|api[_-]?key|Media Dock Data|app-cache'
+ZIP_PRIVACY_PATTERN='(^|/)(cookies?|Media Dock Data|app-cache)(/|$)|\.cookies\.txt|cookies\.txt|history|config\.json|user[- ]data|electron-session|electron-user-data|subtitle-cleanup-config|api[_-]?key'
 
 if [[ -z "${YTDLP_URL:-}" ]]; then
   if [[ "$YTDLP_CHANNEL" == "nightly" ]]; then
@@ -63,6 +65,22 @@ prepare_release_dir() {
   rm -f "$VERSION_DIR"/*mac*.zip(N) "$VERSION_DIR"/*.txt(N) "$VERSION_DIR"/latest-mac.yml(N)
 }
 
+copy_cookie_extension_assets() {
+  local package_dir="$1"
+  local extension_zip
+
+  extension_zip="$(find "$COOKIE_EXTENSION_RELEASE_DIR" -maxdepth 1 -type f -name 'media-dock-cookie-exporter-*.zip' | sort | tail -n 1)"
+  if [[ ! -d "$COOKIE_EXTENSION_DIST_DIR" || -z "$extension_zip" ]]; then
+    echo "MediaCookies extension assets were not found. Run npm run extension:pack first."
+    exit 1
+  fi
+
+  mkdir -p "$package_dir/extensions"
+  rm -rf "$package_dir/extensions/media-dock-cookie-exporter"
+  cp -R "$COOKIE_EXTENSION_DIST_DIR" "$package_dir/extensions/media-dock-cookie-exporter"
+  cp "$extension_zip" "$package_dir/extensions/"
+}
+
 repack_macos_launcher_zip() {
   local archive="$1"
   local unpack_dir
@@ -82,6 +100,7 @@ repack_macos_launcher_zip() {
     exit 1
   fi
   mv "$app_path" "$package_dir/core/Media Dock.app"
+  copy_cookie_extension_assets "$package_dir"
   cp "$README_PATH" "$package_dir/README-mac.txt"
   cat > "$package_dir/Launch Media Dock.command" <<'EOF'
 #!/bin/zsh
@@ -126,9 +145,17 @@ write_release_notes() {
 - \`README-windows.txt\`
 - \`Launch Media Dock.command\` macOS ZIP 根目录启动脚本
 - \`README-mac.txt\`
+- \`extensions/media-dock-cookie-exporter\` MediaCookies 浏览器插件
 
 ## 主要更新
 
+- 内置 MediaCookies 浏览器插件，可导出并导入 Media Dock 可读取的站点 Cookie ZIP
+- MediaCookies 预览逻辑改为先扫描浏览器 Cookie，再按 yt-dlp 官方 supported sites 自动生成可导出来源
+- MediaCookies 默认只导出匹配 yt-dlp 官方支持站点的 Cookie，同时提供“全部 Cookie”高级模式
+- MediaCookies 支持预览后再执行全选 常用 清空，最后按当前选择导出 ZIP
+- MediaCookies 内置常用默认改为更稳的 B 站和 YouTube；抖音/TikTok 仍可手动选择，但不会默认加入常用
+- MediaCookies 支持把当前选择保存为常用配置，并可导入/导出只包含来源 ID 的 JSON 配置文件
+- 下载面板新增抖音/TikTok 链接检查，粘贴后会提前提示具体视频页、可转换入口或不适合下载的推荐流入口
 - 媒体工具改为主窗口内部工作区，不再从主界面弹出额外窗口
 - 新增本地音视频单个配对合并和批量文件夹自动配对合并
 - 多文件合并优先按照媒体流类型和时长配对，不再依赖文件名相似度
@@ -168,9 +195,17 @@ This release refreshes the shared desktop package with local media merge support
 - \`README-windows.txt\`
 - \`Launch Media Dock.command\` at the macOS zip root
 - \`README-mac.txt\`
+- \`extensions/media-dock-cookie-exporter\` bundled MediaCookies browser extension
 
 ## Highlights
 
+- Bundled the MediaCookies browser extension for exporting and importing Media Dock compatible cookie ZIPs
+- MediaCookies now scans browser cookies first, then generates exportable sources from the official yt-dlp supported sites list
+- MediaCookies defaults to cookies matching yt-dlp supported sites, with an explicit advanced all-cookie mode
+- MediaCookies now supports preview first, then Select All, Common, Clear, and export ZIP from the current selection
+- MediaCookies built-in Common now stays conservative with Bilibili and YouTube; Douyin/TikTok remain manually selectable but are not selected by Common unless saved by the user
+- MediaCookies can save the current selection as a Common profile and import/export a source-ID-only JSON profile
+- The download panel now checks Douyin/TikTok URLs as soon as they are pasted, flagging direct video links, convertible entries, and unsupported feed pages early
 - Moved Media Tools into an in-window workspace instead of opening an extra window from the main UI
 - Added single-pair and batch-folder local audio/video merge workflows
 - Multi-file merge now pairs by stream type and duration instead of filename similarity
@@ -295,6 +330,7 @@ for dylib in "$TOOLS_LIB_DIR"/*.dylib(N); do
 done
 
 npm run build
+npm run extension:pack
 npx electron-builder --mac zip "$BUILDER_ARCH_FLAG"
 
 MAC_ZIP="$(find "$RELEASE_DIR" -maxdepth 1 -type f -name '*mac.zip' | head -n 1)"
@@ -310,6 +346,7 @@ This build is a script-launched portable folder packaged as a zip.
 Double-click "Launch Media Dock.command" from the unzipped folder.
 The actual runtime files are kept inside the "core" folder.
 yt-dlp, ffmpeg, ffprobe, and deno are bundled with the program.
+The MediaCookies browser extension is included in the "extensions" folder.
 Runtime data stays next to this launcher in "Media Dock Data".
 That folder contains downloads, cookies, cache, update zips, and any
 auto-installed Deno runtime files.

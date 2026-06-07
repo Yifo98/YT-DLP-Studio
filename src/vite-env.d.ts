@@ -14,6 +14,8 @@ type AppPaths = {
   defaultDownloadDir: string
   envName: string
   cookiesDir: string
+  cookieExtensionDir: string | null
+  cookieExtensionZipPath: string | null
 }
 
 type CookieFileInfo = {
@@ -25,6 +27,12 @@ type CookieFileInfo = {
   expiredCookieNames: string[]
   expiringSoonCookieCount: number
   expiringSoonCookieNames: string[]
+}
+
+type CookieZipImportResult = {
+  importedDir: string
+  importedFiles: string[]
+  cookieFiles: CookieFileInfo[]
 }
 
 type SelfCheckItem = {
@@ -61,7 +69,7 @@ type MediaAudioExportFormat = 'mp3' | 'wav' | 'flac' | 'm4a'
 type MediaSubtitleExportFormat = 'srt' | 'ass' | 'vtt'
 type SubtitleCleanupMode = 'single' | 'batch'
 type MediaMergeMode = 'selection' | 'folder'
-type MediaMergeOutputFormat = 'mp4' | 'mkv'
+type MediaMergeOutputFormat = 'mp4' | 'mkv' | 'mov'
 
 type SubtitleCleanupConfig = {
   baseUrl: string
@@ -122,6 +130,7 @@ type MediaMergePreviewResult = {
   unmatchedAudioCount: number
   estimatedSizeBytes: number | null
   estimatedDurationSeconds: number | null
+  longestDurationSeconds: number | null
   pairs: MediaMergePair[]
   skipped: { path: string; reason: string }[]
 }
@@ -144,6 +153,7 @@ type DownloadRequest = {
   videoPreset: VideoPreset
   extraArgs: string
   cookieFile: string | null
+  urlCookieFiles: Array<string | null>
   concurrency: number
 }
 
@@ -160,6 +170,7 @@ type JobSnapshot = {
   outputPath?: string
   command?: string
   message?: string
+  exitCode?: number | null
   index: number
   totalJobs: number
 }
@@ -214,6 +225,7 @@ interface Window {
   ytDlpApi: {
     getPaths: () => Promise<AppPaths>
     listCookieFiles: () => Promise<CookieFileInfo[]>
+    importCookieZip: () => Promise<CookieZipImportResult | null>
     getSelfCheck: () => Promise<{ items: SelfCheckItem[]; toolsSource: 'bundled' | 'external' }>
     checkForUpdates: () => Promise<UpdateCheckResult>
     downloadLatestUpdate: () => Promise<UpdateDownloadResult>
@@ -253,6 +265,8 @@ interface Window {
     openPath: (targetPath: string) => Promise<void>
     showItemInFolder: (targetPath: string) => Promise<void>
     openExternal: (targetUrl: string) => Promise<void>
+    copyText: (text: string) => Promise<boolean>
+    exportTextLog: (defaultName: string, content: string) => Promise<string | null>
     onDownloadUpdate: (listener: (payload: DownloadUpdate) => void) => Unsubscribe
     onMediaToolsUpdate: (listener: (payload: MediaToolsUpdate) => void) => Unsubscribe
   }

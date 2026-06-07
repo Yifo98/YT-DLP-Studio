@@ -8,7 +8,7 @@ type MediaToolAction = 'extractAudio' | 'extractSubtitles'
 type MediaAudioExportFormat = 'mp3' | 'wav' | 'flac' | 'm4a'
 type MediaSubtitleExportFormat = 'srt' | 'ass' | 'vtt'
 type MediaMergeMode = 'selection' | 'folder'
-type MediaMergeOutputFormat = 'mp4' | 'mkv'
+type MediaMergeOutputFormat = 'mp4' | 'mkv' | 'mov'
 type CleanupConnectionState = 'idle' | 'success' | 'error'
 type CleanupBaseUrlPresetId = string | 'custom'
 type CleanupBaseUrlPreset = {
@@ -243,7 +243,7 @@ function getCopy(language: Language) {
         mergePickAudio: '自动识别音轨',
         mergePickFolder: '选择文件夹',
         mergeOutputFormat: '输出封装',
-        mergeFormatHint: 'MP4 通用，MKV 容错。',
+        mergeFormatHint: 'MP4 通用，MKV 容错；MOV 会转成 ProRes 422 + PCM，适合达芬奇后期但文件更大。',
         mergeOutputName: '输出名称',
         mergeOutputNamePlaceholder: '留空则按视频文件名自动命名',
         mergeOutputNameHint: '只有一组配对时会直接使用这个名称；多组配对会自动追加 01、02，避免互相覆盖。',
@@ -251,7 +251,7 @@ function getCopy(language: Language) {
         mergeOutputPreviewDefault: '未填写自定义名称：{name}',
         mergeOutputPreviewCustom: '当前输出示例：{name}',
         mergeOutputPreviewMissing: '选择文件或文件夹后会显示更贴近实际的文件名。',
-        mergeOutputHint: '配对只按视频和音轨的时长差判断；合并优先无损复制，MP4 失败时自动把音频转成 AAC 再试一次。',
+        mergeOutputHint: '配对只按视频和音轨的时长差判断；MP4/MKV 优先无损复制，MOV 会转成 ProRes 422 + PCM。',
         mergePreviewTitle: '合并预览',
         mergePreviewHint: '这里会显示识别到的流、预计配对、大小和时长。',
         mergePreviewLoading: '正在读取媒体流...',
@@ -262,8 +262,10 @@ function getCopy(language: Language) {
         mergePreviewPairCount: '可合并',
         mergePreviewSize: '预计大小',
         mergePreviewDuration: '预计时长',
+        mergePreviewTotalDuration: '全部合计',
         mergePreviewPairs: '预计配对',
         mergePreviewNoPairs: '还没有找到可合并的视频/音轨配对。',
+        mergePreviewReady: '合并预览已生成，确认后再点击合并已选配对。',
         mergePreviewDiff: '时长差',
         mergePreviewTracks: '视频内音轨 {video} · 外部音轨 {audio}',
         mergePreviewOutput: '输出',
@@ -277,6 +279,7 @@ function getCopy(language: Language) {
         mergeMissingOutput: '先选择输出目录。',
         mergeRunningSingle: '正在扫描并合并已选文件。',
         mergeRunningBatch: '正在扫描并合并文件夹内的分离文件。',
+        mergeFinished: '已完成 {count} 个音视频合并任务。',
         subtitleUnavailable: '当前文件没有检测到字幕流，这项现在不能做。',
         subtitleExternalHint: '如果这是硬字幕或根本没有内封字幕，建议改用 Subtitle Edit 这类 OCR 工具来识别字幕。',
         subtitleExternalAction: '打开 Subtitle Edit',
@@ -325,6 +328,7 @@ function getCopy(language: Language) {
         progressStopped: '已停止',
         runtimeTitle: '工具环境',
         runtimeHint: '这里会显示当前识别到的媒体核心、下载核心和 Deno 状态。',
+        runtimePathDetails: '路径明细',
         runtimeDownloadCore: '下载核心',
         runtimeRefresh: '刷新环境',
         runtimeRefreshing: '刷新中...',
@@ -442,7 +446,7 @@ function getCopy(language: Language) {
         mergePickAudio: 'Auto-detect audio',
         mergePickFolder: 'Choose folder',
         mergeOutputFormat: 'Output container',
-        mergeFormatHint: 'MP4 is universal; MKV is more tolerant.',
+        mergeFormatHint: 'MP4 is universal; MKV is tolerant. MOV transcodes to ProRes 422 + PCM for DaVinci Resolve and creates larger files.',
         mergeOutputName: 'Output name',
         mergeOutputNamePlaceholder: 'Leave empty to use the video file name',
         mergeOutputNameHint: 'One pair uses this name directly. Multiple pairs append 01, 02, and so on to avoid overwrites.',
@@ -450,7 +454,7 @@ function getCopy(language: Language) {
         mergeOutputPreviewDefault: 'Without a custom name: {name}',
         mergeOutputPreviewCustom: 'Current output example: {name}',
         mergeOutputPreviewMissing: 'Choose files or a folder to see a more realistic name.',
-        mergeOutputHint: 'Pairing only uses video/audio duration difference. Merge uses lossless stream copy first and retries MP4 with AAC audio if needed.',
+        mergeOutputHint: 'Pairing only uses video/audio duration difference. MP4/MKV use stream copy first; MOV transcodes to ProRes 422 + PCM.',
         mergePreviewTitle: 'Merge preview',
         mergePreviewHint: 'Shows detected streams, planned pairs, estimated size, and duration.',
         mergePreviewLoading: 'Reading media streams...',
@@ -461,8 +465,10 @@ function getCopy(language: Language) {
         mergePreviewPairCount: 'Mergeable',
         mergePreviewSize: 'Est. size',
         mergePreviewDuration: 'Est. duration',
+        mergePreviewTotalDuration: 'Total duration',
         mergePreviewPairs: 'Planned pairs',
         mergePreviewNoPairs: 'No mergeable video/audio pairs found yet.',
+        mergePreviewReady: 'Merge preview is ready. Click merge selected pairs when you are ready.',
         mergePreviewDiff: 'Duration diff',
         mergePreviewTracks: 'video audio {video} · external audio {audio}',
         mergePreviewOutput: 'Output',
@@ -476,6 +482,7 @@ function getCopy(language: Language) {
         mergeMissingOutput: 'Choose an output folder first.',
         mergeRunningSingle: 'Scanning and merging selected files.',
         mergeRunningBatch: 'Scanning and merging separated files in the folder.',
+        mergeFinished: 'Finished {count} media merge task(s).',
         subtitleUnavailable: 'No subtitle stream was detected in this file.',
         subtitleExternalHint: 'If this is hardsubbed video or the file has no embedded subtitle track, use an OCR tool like Subtitle Edit instead.',
         subtitleExternalAction: 'Open Subtitle Edit',
@@ -524,6 +531,7 @@ function getCopy(language: Language) {
         progressStopped: 'Stopped',
         runtimeTitle: 'Runtime',
         runtimeHint: 'Shows the currently detected media core, download core, and Deno runtime state.',
+        runtimePathDetails: 'Path details',
         runtimeDownloadCore: 'Download core',
         runtimeRefresh: 'Refresh runtime',
         runtimeRefreshing: 'Refreshing...',
@@ -643,6 +651,7 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
   const [mergeOutputFormat, setMergeOutputFormat] = useState<MediaMergeOutputFormat>('mp4')
   const [mergeOutputName, setMergeOutputName] = useState('')
   const [mergePreview, setMergePreview] = useState<MediaMergePreviewResult | null>(null)
+  const [mergePreviewKey, setMergePreviewKey] = useState('')
   const [mergePreviewLoading, setMergePreviewLoading] = useState(false)
   const [mergePreviewError, setMergePreviewError] = useState('')
   const [cleanupMode, setCleanupMode] = useState<SubtitleCleanupMode>('single')
@@ -674,7 +683,15 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
   const normalizedTitle = copy.title.replace(/[。.]$/, '')
   const subtitleStreams = inspection?.streams.filter((stream) => stream.codecType === 'subtitle') ?? []
   const hasSubtitleStream = subtitleStreams.length > 0
-  const progressValue = status === 'running' ? 58 : status === 'success' ? 100 : status === 'error' || status === 'cancelled' ? 100 : 0
+  const progressValue = status === 'running'
+    ? taskProgress && taskProgress.total > 0
+      ? Math.max(8, Math.min(96, (taskProgress.current / taskProgress.total) * 100))
+      : 58
+    : status === 'success'
+      ? 100
+      : status === 'error' || status === 'cancelled'
+        ? 100
+        : 0
   const progressStatusLabel = status === 'running'
     ? copy.progressRunning
     : status === 'success'
@@ -690,6 +707,17 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
   const isDeepSeekCleanupProvider = normalizedCleanupBaseUrl.includes('deepseek.com')
   const isBigModelCleanupProvider = normalizedCleanupBaseUrl.includes('bigmodel.cn') || normalizedCleanupBaseUrl.includes('z.ai')
   const mergeCustomBaseName = sanitizePreviewBaseName(mergeOutputName)
+  const mergePreviewRequestKey = useMemo(
+    () => JSON.stringify({
+      mode: mergeMode,
+      inputPaths: mergeMode === 'selection' ? mergeInputPaths : [],
+      inputDir: mergeMode === 'folder' ? mergeInputDir : '',
+      outputDir,
+      outputFormat: mergeOutputFormat,
+      outputName: mergeOutputName.trim(),
+    }),
+    [mergeInputDir, mergeInputPaths, mergeMode, mergeOutputFormat, mergeOutputName, outputDir],
+  )
   const mergeFirstPreviewPath = mergePreview?.pairs[0]?.videoPath ?? mergeInputPaths[0] ?? ''
   const mergeDefaultStem = mergeFirstPreviewPath
     ? getPathStem(mergeFirstPreviewPath)
@@ -703,12 +731,25 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
     ? `${mergeInputPaths.length} ${language === 'zh' ? '个文件' : mergeInputPaths.length === 1 ? 'file' : 'files'}`
     : copy.waiting
   const mergeSourceReady = mergeMode === 'selection' ? mergeInputPaths.length > 0 : Boolean(mergeInputDir)
+  const mergeCanRun = status !== 'running'
+    && mergeSourceReady
+    && Boolean(outputDir)
+    && !mergePreviewLoading
+    && Boolean(mergePreview)
+    && mergePreviewKey === mergePreviewRequestKey
+    && !mergePreviewError
+    && (mergePreview?.pairCount ?? 0) > 0
+  const mergePreviewPrimaryDuration = mergePreview && mergePreview.pairCount > 1
+    ? mergePreview.longestDurationSeconds
+    : mergePreview?.estimatedDurationSeconds ?? null
+  const runtimeSourceLabel = runtimeToolsSource === 'bundled'
+    ? (language === 'zh' ? '分享包内置' : 'Bundled')
+    : (language === 'zh' ? '系统环境' : 'System')
+  const runtimeDenoLabel = runtimePaths?.denoPath ? copy.runtimeDenoReady : copy.runtimeDenoMissing
   const runtimeSummary = runtimePaths
     ? [
-        `${copy.runtimeSource}: ${runtimeToolsSource === 'bundled' ? (language === 'zh' ? '分享包内置' : 'Bundled') : (language === 'zh' ? '系统环境' : 'System')}`,
-        `${copy.runtimeDownloadCore}: ${runtimePaths.envName}`,
-        `FFmpeg: ${compactPath(runtimePaths.ffmpegPath, 92)}`,
-        `Deno: ${runtimePaths.denoPath ? compactPath(runtimePaths.denoPath, 92) : copy.runtimeDenoMissing}`,
+        `FFmpeg: ${compactPath(runtimePaths.ffmpegPath, 72)}`,
+        `Deno: ${runtimePaths.denoPath ? compactPath(runtimePaths.denoPath, 72) : copy.runtimeDenoMissing}`,
       ].join('\n')
     : copy.waiting
 
@@ -725,12 +766,15 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
     if (!appApi) return
     if (!mergeSourceReady) {
       setMergePreview(null)
+      setMergePreviewKey('')
       setMergePreviewError('')
       setMergePreviewLoading(false)
       return
     }
 
     let active = true
+    const requestKey = mergePreviewRequestKey
+    setMergePreviewKey('')
     const timer = window.setTimeout(() => {
       setMergePreviewLoading(true)
       setMergePreviewError('')
@@ -745,11 +789,18 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
         .then((preview) => {
           if (!active) return
           setMergePreview(preview)
+          setMergePreviewKey(requestKey)
+          setStatus('idle')
+          setStatusMessage(preview.pairCount > 0 ? copy.mergePreviewReady : copy.mergePreviewNoPairs)
         })
         .catch((error) => {
           if (!active) return
           setMergePreview(null)
-          setMergePreviewError(error instanceof Error ? error.message : 'Preview failed.')
+          setMergePreviewKey('')
+          const message = error instanceof Error ? error.message : 'Preview failed.'
+          setMergePreviewError(message)
+          setStatus('error')
+          setStatusMessage(message)
         })
         .finally(() => {
           if (!active) return
@@ -761,7 +812,7 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
       active = false
       window.clearTimeout(timer)
     }
-  }, [mergeInputDir, mergeInputPaths, mergeMode, mergeOutputFormat, mergeOutputName, mergeSourceReady, outputDir])
+  }, [copy.mergePreviewNoPairs, copy.mergePreviewReady, mergeInputDir, mergeInputPaths, mergeMode, mergeOutputFormat, mergeOutputName, mergePreviewRequestKey, mergeSourceReady, outputDir])
 
   async function refreshRuntimeState() {
     if (!appApi) return
@@ -815,7 +866,7 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
             total: payload.progress.total,
             currentPath: payload.progress.currentPath ?? '',
           })
-        } else if (payload.status === 'running') {
+        } else {
           setTaskProgress(null)
         }
         if (payload.outputs) {
@@ -959,19 +1010,32 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
   async function pickMergeFiles() {
     const selected = await appApi.pickMediaFiles(mergeInputPaths[0] || inputPath || outputDir || undefined)
     if (selected.length === 0) return
+    setMergePreview(null)
+    setMergePreviewKey('')
+    setMergePreviewError('')
+    setMergePreviewLoading(true)
     setMergeMode('selection')
     setMergeInputPaths(selected)
+    setInspection(null)
+    setStatus('idle')
+    setStatusMessage(copy.mergePreviewLoading)
     if (!outputDir) {
       setOutputDir(getDirectoryFromPath(selected[0]))
     }
-    await inspect(selected[0])
   }
 
   async function pickMergeFolder() {
     const selected = await appApi.pickDirectory(mergeInputDir || outputDir || undefined)
     if (!selected) return
+    setMergePreview(null)
+    setMergePreviewKey('')
+    setMergePreviewError('')
+    setMergePreviewLoading(true)
     setMergeMode('folder')
     setMergeInputDir(selected)
+    setInspection(null)
+    setStatus('idle')
+    setStatusMessage(copy.mergePreviewLoading)
     if (!outputDir) {
       setOutputDir(selected)
     }
@@ -1068,11 +1132,12 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
     setTaskProgress(null)
     setStatus('running')
     setStatusMessage(copy.runPlan)
+    setLogs([`[ui] ${copy.runPlan}`])
 
     for (const action of selectedActions) {
       try {
         setRunningTaskLabel(action === 'extractAudio' ? copy.extractAudio : copy.extractSubtitles)
-        await appApi.runMediaTool({
+        const actionOutputs = await appApi.runMediaTool({
           action,
           inputPath,
           outputDir,
@@ -1080,6 +1145,12 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
           subtitleFormat,
           subtitleStreamIndexes: action === 'extractSubtitles' ? selectedSubtitleTracks : [],
         })
+        setOutputs((current) => [...current, ...actionOutputs.filter((item) => !current.includes(item))])
+        setLogs((current) => [
+          ...current,
+          `[ui] ${action === 'extractAudio' ? copy.extractAudio : copy.extractSubtitles} ${copy.progressFinished}`,
+          ...actionOutputs.map((item) => `[output] ${item}`),
+        ].slice(-500))
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to run media tool.'
         setRunningTaskLabel('')
@@ -1247,9 +1318,10 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
     setStatus('running')
     setStatusMessage(mode === 'selection' ? copy.mergeRunningSingle : copy.mergeRunningBatch)
     setRunningTaskLabel(mode === 'selection' ? copy.mergeRunSingle : copy.mergeRunBatch)
+    setLogs([`[ui] ${mode === 'selection' ? copy.mergeRunningSingle : copy.mergeRunningBatch}`])
 
     try {
-      await appApi.runMediaMerge({
+      const mergedOutputs = await appApi.runMediaMerge({
         mode,
         inputPaths: mode === 'selection' ? mergeInputPaths : [],
         inputDir: mode === 'folder' ? mergeInputDir : null,
@@ -1257,6 +1329,16 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
         outputFormat: mergeOutputFormat,
         outputName: mergeOutputName.trim() || null,
       })
+      setOutputs((current) => [...current, ...mergedOutputs.filter((item) => !current.includes(item))])
+      setLogs((current) => [
+        ...current,
+        `[ui] ${copy.mergeFinished.replace('{count}', String(mergedOutputs.length))}`,
+        ...mergedOutputs.map((item) => `[output] ${item}`),
+      ].slice(-500))
+      setTaskProgress(null)
+      setStatus('success')
+      setStatusMessage(copy.mergeFinished.replace('{count}', String(mergedOutputs.length)))
+      setRunningTaskLabel('')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Media merge failed.'
       setStatus(message.toLowerCase().includes('cancelled') ? 'cancelled' : 'error')
@@ -1584,10 +1666,10 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
                 <div className="field">
                   <span>{copy.mergeMode}</span>
                   <div className="segmented media-cleanup-segmented">
-                    <button className={mergeMode === 'selection' ? 'segmented__item active' : 'segmented__item'} type="button" onClick={() => setMergeMode('selection')}>
+                    <button className={mergeMode === 'selection' ? 'segmented__item active' : 'segmented__item'} type="button" disabled={status === 'running'} onClick={() => setMergeMode('selection')}>
                       {copy.mergeModeSingle}
                     </button>
-                    <button className={mergeMode === 'folder' ? 'segmented__item active' : 'segmented__item'} type="button" onClick={() => setMergeMode('folder')}>
+                    <button className={mergeMode === 'folder' ? 'segmented__item active' : 'segmented__item'} type="button" disabled={status === 'running'} onClick={() => setMergeMode('folder')}>
                       {copy.mergeModeBatch}
                     </button>
                   </div>
@@ -1600,7 +1682,7 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
                         <span>{copy.mergeVideoFile}</span>
                         <input value={mergeSelectedSummary} readOnly placeholder={copy.mergeVideoFile} />
                       </label>
-                      <button className="ghost-button media-side-button media-path-button" type="button" onClick={() => void pickMergeFiles()}>
+                      <button className="ghost-button media-side-button media-path-button" type="button" disabled={status === 'running'} onClick={() => void pickMergeFiles()}>
                         {copy.mergePickVideo}
                       </button>
                     </div>
@@ -1618,9 +1700,9 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
                   <div className="media-path-group">
                     <label className="field field--grow media-path-field">
                       <span>{copy.mergeInputFolder}</span>
-                      <input value={mergeInputDir} onChange={(event) => setMergeInputDir(event.target.value)} placeholder={copy.mergeInputFolder} />
+                      <input value={mergeInputDir} disabled={status === 'running'} onChange={(event) => setMergeInputDir(event.target.value)} placeholder={copy.mergeInputFolder} />
                     </label>
-                    <button className="ghost-button media-side-button media-path-button" type="button" onClick={() => void pickMergeFolder()}>
+                    <button className="ghost-button media-side-button media-path-button" type="button" disabled={status === 'running'} onClick={() => void pickMergeFolder()}>
                       {copy.mergePickFolder}
                     </button>
                   </div>
@@ -1629,9 +1711,10 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
                 <div className="field-grid field-grid--merge-output media-form-grid">
                   <label className="field">
                     <span>{copy.mergeOutputFormat}</span>
-                    <select value={mergeOutputFormat} onChange={(event) => setMergeOutputFormat(event.target.value as MediaMergeOutputFormat)}>
+                    <select value={mergeOutputFormat} disabled={status === 'running'} onChange={(event) => setMergeOutputFormat(event.target.value as MediaMergeOutputFormat)}>
                       <option value="mp4">MP4</option>
                       <option value="mkv">MKV</option>
+                      <option value="mov">MOV / DaVinci</option>
                     </select>
                     <small className="field-help">{copy.mergeFormatHint}</small>
                   </label>
@@ -1639,9 +1722,9 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
                     <div className="media-path-group merge-output-path-group">
                       <label className="field field--grow media-path-field">
                         <span>{copy.outputDir}</span>
-                        <input value={outputDir} onChange={(event) => setOutputDir(event.target.value)} placeholder={copy.outputDir} />
+                        <input value={outputDir} disabled={status === 'running'} onChange={(event) => setOutputDir(event.target.value)} placeholder={copy.outputDir} />
                       </label>
-                      <button className="ghost-button media-side-button media-path-button" type="button" onClick={() => void pickOutputDir()}>
+                      <button className="ghost-button media-side-button media-path-button" type="button" disabled={status === 'running'} onClick={() => void pickOutputDir()}>
                         {copy.pickOutput}
                       </button>
                     </div>
@@ -1651,7 +1734,7 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
                 <small className="field-help merge-wide-help">{copy.mergeOutputHint}</small>
                 <label className="field">
                   <span>{copy.mergeOutputName}</span>
-                  <input value={mergeOutputName} onChange={(event) => setMergeOutputName(event.target.value)} placeholder={copy.mergeOutputNamePlaceholder} />
+                  <input value={mergeOutputName} disabled={status === 'running'} onChange={(event) => setMergeOutputName(event.target.value)} placeholder={copy.mergeOutputNamePlaceholder} />
                   <small className="field-help">{copy.mergeOutputNameHint}</small>
                 </label>
                 <div className="output-preview">
@@ -1699,7 +1782,10 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
                         </div>
                         <div>
                           <span>{copy.mergePreviewDuration}</span>
-                          <strong>{formatDuration(mergePreview.estimatedDurationSeconds, language)}</strong>
+                          <strong>{formatDuration(mergePreviewPrimaryDuration, language)}</strong>
+                          {mergePreview.pairCount > 1 ? (
+                            <small>{copy.mergePreviewTotalDuration}: {formatDuration(mergePreview.estimatedDurationSeconds, language)}</small>
+                          ) : null}
                         </div>
                       </div>
                       <div className="merge-pair-list">
@@ -1740,7 +1826,7 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
                   <button
                     className="primary-button media-run-button"
                     type="button"
-                    disabled={status === 'running' || !mergeSourceReady || (mergePreview !== null && mergePreview.pairCount === 0)}
+                    disabled={!mergeCanRun}
                     onClick={() => void runMerge(mergeMode)}
                   >
                     {mergeMode === 'selection' ? copy.mergeRunSingle : copy.mergeRunBatch}
@@ -1945,19 +2031,35 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
         </section>
         <aside className="media-sidebar">
           <section className="panel telemetry media-panel">
-            <div className="section-title">
-              <span>{copy.runtimeTitle}</span>
-              <div className="section-actions">
+            <div className="section-title media-runtime-title">
+              <div>
+                <span>{copy.runtimeTitle}</span>
                 <small>{copy.runtimeHint}</small>
-                <button className="ghost-button ghost-button--small" type="button" disabled={runtimeRefreshing || status === 'running'} onClick={() => void refreshRuntimeState()}>
-                  {runtimeRefreshing ? copy.runtimeRefreshing : copy.runtimeRefresh}
-                </button>
+              </div>
+              <button className="ghost-button ghost-button--small" type="button" disabled={runtimeRefreshing || status === 'running'} onClick={() => void refreshRuntimeState()}>
+                {runtimeRefreshing ? copy.runtimeRefreshing : copy.runtimeRefresh}
+              </button>
+            </div>
+            <div className="runtime-compact-grid">
+              <div>
+                <span>{copy.runtimeSource}</span>
+                <strong>{runtimePaths ? runtimeSourceLabel : copy.waiting}</strong>
+              </div>
+              <div>
+                <span>{copy.runtimeDownloadCore}</span>
+                <strong>{runtimePaths?.envName ?? copy.waiting}</strong>
+              </div>
+              <div>
+                <span>Deno</span>
+                <strong>{runtimePaths ? runtimeDenoLabel : copy.waiting}</strong>
               </div>
             </div>
-            <div className="command-box">
-              <span>{copy.runtimeTitle}</span>
-              <code>{runtimeSummary}</code>
-            </div>
+            {runtimePaths ? (
+              <div className="command-box command-box--compact">
+                <span>{copy.runtimePathDetails}</span>
+                <code>{runtimeSummary}</code>
+              </div>
+            ) : null}
             <div className="section-title">
               <span>{copy.streams}</span>
               <small>{copy.streamsHint}</small>
@@ -2003,7 +2105,7 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
               </div>
               <div className="progress-bar progress-bar--small media-progress-bar">
                 <div
-                  className={status === 'running' ? 'progress-bar__fill media-progress-bar__fill media-progress-bar__fill--indeterminate' : 'progress-bar__fill media-progress-bar__fill'}
+                  className={status === 'running' && !taskProgress ? 'progress-bar__fill media-progress-bar__fill media-progress-bar__fill--indeterminate' : 'progress-bar__fill media-progress-bar__fill'}
                   style={{ width: `${progressValue}%` }}
                 />
               </div>
